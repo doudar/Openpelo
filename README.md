@@ -6,7 +6,7 @@ A cross-platform tool for installing additional apps on your Peloton device. Thi
 
 - Python 3.6 or higher
 - USB cable to connect your Peloton
-- USB debugging enabled on your Peloton
+- USB debugging enabled on your Peloton [how to video](https://www.youtube.com/watch?v=X3oN8JhHe_8)
 
 ## Installation
 
