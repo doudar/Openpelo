@@ -135,11 +135,17 @@ jobs:
         </plist>
         EOL
 
+    - name: Create ZIP for macOS
+      run: |
+        cd dist
+        zip -r OpenPelo-MacOS.zip OpenPelo.app
+        cd ..
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-MacOS
-        path: dist/OpenPelo.app
+        path: dist/OpenPelo-MacOS.zip
 
   build-linux:
     needs: [bump-version]
@@ -230,5 +236,5 @@ jobs:
         name: Release v${{ steps.get_version.outputs.version }}
         files: |
           OpenPelo-Windows/OpenPelo.exe
-          OpenPelo-MacOS/OpenPelo.app/**/*
+          OpenPelo-MacOS/OpenPelo-MacOS.zip
           OpenPelo-Linux/OpenPelo.AppImage
