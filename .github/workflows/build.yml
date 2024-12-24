@@ -135,26 +135,11 @@ jobs:
         </plist>
         EOL
 
-    - name: Create DMG
-      run: |
-        brew install create-dmg
-        create-dmg \
-          --volname "OpenPelo" \
-          --volicon "Icon.ico" \
-          --window-pos 200 120 \
-          --window-size 600 300 \
-          --icon-size 100 \
-          --icon "OpenPelo.app" 175 120 \
-          --hide-extension "OpenPelo.app" \
-          --app-drop-link 425 120 \
-          "OpenPelo.dmg" \
-          "dist/OpenPelo.app"
-
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-MacOS
-        path: OpenPelo.dmg
+        path: dist/OpenPelo.app
 
   build-linux:
     needs: [bump-version]
@@ -245,5 +230,5 @@ jobs:
         name: Release v${{ steps.get_version.outputs.version }}
         files: |
           OpenPelo-Windows/OpenPelo.exe
-          OpenPelo-MacOS/OpenPelo.dmg
+          OpenPelo-MacOS/OpenPelo.app/**/*
           OpenPelo-Linux/OpenPelo.AppImage
