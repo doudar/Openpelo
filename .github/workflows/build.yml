@@ -199,4 +199,4 @@ jobs:
         files: |
           OpenPelo-Windows/OpenPelo.exe
           OpenPelo-Linux/OpenPelo.AppImage
-          OpenPelo-macOS/OpenPelo
+          OpenPelo-macOS/OpenPelo.zip
