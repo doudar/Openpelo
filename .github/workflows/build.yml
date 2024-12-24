@@ -1,0 +1,249 @@
+name: Build Executables
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [created]
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Bump version and push tag
+        run: |
+          # Read current version
+          VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
+          
+          # Split version into components
+          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]}"
+          PATCH="${VERSION_PARTS[2]}"
+          
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          # Update version.json
+          echo "{\"version\": \"$NEW_VERSION\"}" > version.json
+          
+          # Configure Git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Commit version update
+          git add version.json
+          git commit -m "Bump version to $NEW_VERSION"
+          
+          # Create and push tag
+          git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
+          git push origin main --tags
+          git push
+
+  build-windows:
+    needs: [bump-version]
+    runs-on: windows-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller certifi tk
+    
+    - name: Build executable
+      run: |
+        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json;." --add-data "usb_debug_steps.json;." openpelo.py
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-Windows
+        path: dist/OpenPelo.exe
+
+  build-macos:
+    needs: [bump-version]
+    runs-on: macos-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller certifi tk pillow
+    
+    - name: Build executable
+      run: |
+        pyinstaller --name="OpenPelo" --windowed --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
+        
+    - name: Create app bundle
+      run: |
+        mkdir -p "dist/OpenPelo.app/Contents/MacOS"
+        mkdir -p "dist/OpenPelo.app/Contents/Resources"
+        cp -r dist/OpenPelo/* "dist/OpenPelo.app/Contents/MacOS/"
+        cp Icon.ico "dist/OpenPelo.app/Contents/Resources/Icon.icns"
+        chmod +x "dist/OpenPelo.app/Contents/MacOS/OpenPelo"
+        
+        cat > "dist/OpenPelo.app/Contents/Info.plist" << 'EOL'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>OpenPelo</string>
+            <key>CFBundleIconFile</key>
+            <string>Icon</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.openpelo.installer</string>
+            <key>CFBundleName</key>
+            <string>OpenPelo</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.10</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+        </dict>
+        </plist>
+        EOL
+
+    - name: Create DMG
+      run: |
+        brew install create-dmg
+        create-dmg \
+          --volname "OpenPelo" \
+          --volicon "Icon.ico" \
+          --window-pos 200 120 \
+          --window-size 600 300 \
+          --icon-size 100 \
+          --icon "OpenPelo.app" 175 120 \
+          --hide-extension "OpenPelo.app" \
+          --app-drop-link 425 120 \
+          "OpenPelo.dmg" \
+          "dist/OpenPelo.app"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-MacOS
+        path: OpenPelo.dmg
+
+  build-linux:
+    needs: [bump-version]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller certifi tk
+    
+    - name: Build executable
+      run: |
+        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
+    
+    - name: Install AppImage dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libfuse2 imagemagick
+
+    - name: Create AppImage
+      run: |
+        # Make the executable
+        chmod +x dist/OpenPelo
+        
+        # Create AppDir structure
+        mkdir -p dist/AppDir/usr/bin
+        mkdir -p dist/AppDir/usr/share/icons/hicolor/256x256/apps
+        cp dist/OpenPelo dist/AppDir/usr/bin/
+        
+        # Convert ico to png and place in correct location
+        convert Icon.ico[0] dist/AppDir/usr/share/icons/hicolor/256x256/apps/openpelo.png
+        
+        # Create desktop entry
+        cat > dist/AppDir/openpelo.desktop << 'EOL'
+        [Desktop Entry]
+        Name=OpenPelo
+        Exec=usr/bin/OpenPelo
+        Icon=openpelo
+        Type=Application
+        Categories=Utility;
+        EOL
+        
+        # Create symlink for icon in root
+        ln -s usr/share/icons/hicolor/256x256/apps/openpelo.png dist/AppDir/openpelo.png
+        
+        # Download AppImage tool
+        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+        
+        # Create AppImage
+        ./appimagetool-x86_64.AppImage dist/AppDir dist/OpenPelo.AppImage
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-Linux
+        path: dist/OpenPelo.AppImage
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Get version
+      id: get_version
+      run: |
+        VERSION=$(cat version.json | jq -r .version)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+    
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.get_version.outputs.version }}
+        name: Release v${{ steps.get_version.outputs.version }}
+        files: |
+          OpenPelo-Windows/OpenPelo.exe
+          OpenPelo-MacOS/OpenPelo.dmg
+          OpenPelo-Linux/OpenPelo.AppImage

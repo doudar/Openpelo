@@ -1,0 +1,36 @@
+{
+    "steps": [
+        {
+            "title": "Check Bike Sensor Cable",
+            "description": "Make sure your bike sensor cable is connected to the Peloton Tablet."
+        },
+        {
+            "title": "Firmware Reset",
+            "description": "Go to Settings, system menu and perform a Firmware Reset."
+        },
+        {
+            "title": "Initial Setup",
+            "description": "Wait for the Peloton to reboot, finish the initial setup and select \"Skip Home Installation\""
+        },
+        {
+            "title": "Access Developer Options",
+            "description": "Go to Settings -> Device Preferences, then tap 7 times on Build Number to enable Developer Options"
+        },
+        {
+            "title": "Enable USB Debugging",
+            "description": "Go back to Settings -> Developer Options, then Enable USB debugging"
+        },
+        {
+            "title": "Force Quit Device Management",
+            "description": "Go into your system, Apps, select system in the top right corner. Force quit the App with the Peloton logo named \"Device Management\""
+        },
+        {
+            "title": "Connect USB Cable",
+            "description": "Plug your computer into the Peloton using a micro USB-B cable."
+        },
+        {
+            "title": "Allow USB Debugging",
+            "description": "Select \"always allow this computer\" and allow USB debugging."
+        }
+    ]
+}

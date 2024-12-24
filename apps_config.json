@@ -1,0 +1,29 @@
+{
+    "apps": {
+        "Nova Launcher": {
+            "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
+            "package_name": "Nova Launcher.apk",
+            "description": "The premier custom launcher for Android"
+        },
+        "SmartSpin2k": {
+            "url": "https://api.github.com/repos/doudar/SS2kConfigApp/releases/latest",
+            "package_name": "SS2kConfigApp.apk",
+            "description": "Configuration and ERG workout app for the SmartSpin2k"
+        },
+        "FireFox": {
+            "url": "https://ftp.mozilla.org/pub/fenix/releases/133.0.3/android/fenix-133.0.3-android-armeabi-v7a/fenix-133.0.3.multi.android-armeabi-v7a.apk",
+            "package_name": "fenix-133.0.3.multi.android-armeabi-v7a.apk",
+            "description": "Only non-profit-backed browser that is secure, private & fast"
+        },
+        "Aurora Store": {
+            "url": "https://f-droid.org/repo/com.aurora.store_63.apk",
+            "package_name": "com.aurora.store",
+            "description": "Open source Google Play Store client"
+        },
+        "Moonlight Streaming": {
+            "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.1/app-nonRoot-release.apk",
+            "package_name": "com.moonlight",
+            "description": "Streaming Client For Sunshine"
+        }
+    }
+}
