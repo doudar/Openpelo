@@ -168,11 +168,17 @@ jobs:
         pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
         chmod +x dist/OpenPelo
     
+    - name: Package executable
+      run: |
+        cd dist
+        zip OpenPelo-macOS.zip OpenPelo
+        cd ..
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-macOS
-        path: dist/OpenPelo.zip
+        path: dist/OpenPelo-macOS.zip
 
   create-release:
     needs: [build-windows, build-linux, build-macos]
@@ -199,4 +205,4 @@ jobs:
         files: |
           OpenPelo-Windows/OpenPelo.exe
           OpenPelo-Linux/OpenPelo.AppImage
-          OpenPelo-macOS/OpenPelo.zip
+          OpenPelo-macOS/OpenPelo-macOS.zip
