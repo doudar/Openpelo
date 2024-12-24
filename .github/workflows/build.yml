@@ -81,72 +81,6 @@ jobs:
         name: OpenPelo-Windows
         path: dist/OpenPelo.exe
 
-  build-macos:
-    needs: [bump-version]
-    runs-on: macos-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk pillow
-    
-    - name: Build executable
-      run: |
-        pyinstaller --name="OpenPelo" --windowed --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
-        
-    - name: Create app bundle
-      run: |
-        mkdir -p "dist/OpenPelo.app/Contents/MacOS"
-        mkdir -p "dist/OpenPelo.app/Contents/Resources"
-        cp -r dist/OpenPelo/* "dist/OpenPelo.app/Contents/MacOS/"
-        cp Icon.ico "dist/OpenPelo.app/Contents/Resources/Icon.icns"
-        chmod +x "dist/OpenPelo.app/Contents/MacOS/OpenPelo"
-        
-        cat > "dist/OpenPelo.app/Contents/Info.plist" << 'EOL'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleExecutable</key>
-            <string>OpenPelo</string>
-            <key>CFBundleIconFile</key>
-            <string>Icon</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.openpelo.installer</string>
-            <key>CFBundleName</key>
-            <string>OpenPelo</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>10.10</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-        </dict>
-        </plist>
-        EOL
-
-    - name: Create ZIP for macOS
-      run: |
-        cd dist
-        zip -r OpenPelo-MacOS.zip OpenPelo.app
-        cd ..
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-MacOS
-        path: dist/OpenPelo-MacOS.zip
-
   build-linux:
     needs: [bump-version]
     runs-on: ubuntu-latest
@@ -212,8 +146,36 @@ jobs:
         name: OpenPelo-Linux
         path: dist/OpenPelo.AppImage
 
+  build-macos:
+    needs: [bump-version]
+    runs-on: macos-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller certifi tk
+    
+    - name: Build executable
+      run: |
+        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
+        chmod +x dist/OpenPelo
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-macOS
+        path: dist/OpenPelo
+
   create-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
@@ -236,5 +198,5 @@ jobs:
         name: Release v${{ steps.get_version.outputs.version }}
         files: |
           OpenPelo-Windows/OpenPelo.exe
-          OpenPelo-MacOS/OpenPelo-MacOS.zip
           OpenPelo-Linux/OpenPelo.AppImage
+          OpenPelo-macOS/OpenPelo
