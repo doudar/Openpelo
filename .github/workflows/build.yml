@@ -172,7 +172,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-macOS
-        path: dist/OpenPelo
+        path: dist/OpenPelo.zip
 
   create-release:
     needs: [build-windows, build-linux, build-macos]
