@@ -1,7 +1,9 @@
 # OpenPelo
+<img src="./images/Icon.png" alt="icon" width="150"/>
 
-A cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps.
-
+OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode.
+  
+![image](./images/OpenPelo.png)
 ## Requirements
 
 - Python 3.6 or higher

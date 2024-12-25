@@ -10,9 +10,9 @@
             "package_name": "SS2kConfigApp.apk",
             "description": "Configuration and ERG workout app for the SmartSpin2k"
         },
-        "FireFox": {
-            "url": "https://ftp.mozilla.org/pub/fenix/releases/133.0.3/android/fenix-133.0.3-android-armeabi-v7a/fenix-133.0.3.multi.android-armeabi-v7a.apk",
-            "package_name": "fenix-133.0.3.multi.android-armeabi-v7a.apk",
+        "FireFox Focus": {
+            "url": "https://ftp.mozilla.org/pub/focus/releases/133.0.3/android/focus-133.0.3-android-arm64-v8a/focus-133.0.3.multi.android-arm64-v8a.apk",
+            "package_name": "focus-133.0.3.multi.android-arm64-v8a.apk",
             "description": "Only non-profit-backed browser that is secure, private & fast"
         },
         "Aurora Store": {
