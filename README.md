@@ -27,7 +27,7 @@ Watch on YouTube:
    - Windows: Download from [python.org](https://www.python.org/downloads/)
    - Mac: Use Homebrew: `brew install python3`
 2. Download this repository
-3. Run `python openpelo.py` (Windows) or `python3 openpelo.py` (Mac). Depending on your python installiation, it could also be 'py openpelo.py'.
+3. Run `python openpelo.py` (Windows) or `python3 openpelo.py` (Mac). Depending on your python installation, it could also be 'py openpelo.py'.
 
 ## Usage
 
