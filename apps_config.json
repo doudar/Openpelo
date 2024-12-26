@@ -24,6 +24,12 @@
             "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.1/app-nonRoot-release.apk",
             "package_name": "com.moonlight",
             "description": "Streaming Client For Sunshine"
+        },
+        "MaterialFiles": {
+            "url": "https://github.com/zhanghai/MaterialFiles/releases/latest/download/app-release-universal.apk",
+            "package_name": "app-release-universal.apk",
+            "description": "An open source Material Design file manager, for Android 5.0+."
         }
+
     }
 }
