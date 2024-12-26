@@ -1,16 +1,19 @@
 # OpenPelo
 <img src="./images/Icon.png" alt="icon" width="150"/>
 
-OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode.
+OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode. Combine this with [SmartSpin2k](https://Github.com/doudar/SmartSpin2k/) for the ultimate Zwift setup. 
   
 ![image](./images/OpenPelo.png)
 ## Requirements
 
 - Python 3.6 or higher
 - USB cable to connect your Peloton
-- USB debugging enabled on your Peloton [how to video](https://www.youtube.com/watch?v=X3oN8JhHe_8)
+- USB debugging enabled on your Peloton
 
 ## Installation
+Watch on YouTube:
+
+[![how to video](https://img.youtube.com/vi/X3oN8JhHe_8/0.jpg)](https://www.youtube.com/watch?v=X3oN8JhHe_8)
 
 ### Option 1: Pre-built Executables (Recommended)
 1. Go to the [Releases](../../releases) page

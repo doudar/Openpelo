@@ -19,9 +19,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13.0'
+        uses: actions/setup-python@v5
       
       - name: Bump version and push tag
         run: |
@@ -62,14 +60,12 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13.0'
+      uses: actions/setup-python@v5
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk
+        pip install pyinstaller certifi tk pillow
     
     - name: Build executable
       run: |
@@ -89,14 +85,12 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13.0'
+      uses: actions/setup-python@v5
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk
+        pip install pyinstaller certifi tk pillow
     
     - name: Build executable
       run: |
@@ -154,9 +148,7 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13.0'
+      uses: actions/setup-python@v5
     
     - name: Install dependencies
       run: |
