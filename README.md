@@ -34,7 +34,7 @@ Watch on YouTube:
 1. Connect your Peloton to your computer via USB
 2. Enable USB debugging on your Peloton:
    - Make sure your bike sensor cable is connected to the Peloton Tablet.
-   - Go to Settings, system menu and preform a Firmware Reset.
+   - Go to Settings, system menu and perform a Firmware Reset.
    - Finish the initial setup and select "Skip Home Installation"
    - Go to Settings
    - Tap on Device Preferences
@@ -42,6 +42,8 @@ Watch on YouTube:
    - Go back to Settings
    - Tap on Developer Options
    - Enable USB debugging
+   - Disable Verify apps over USB
+   - Enable Gabeldorsche
    - Go into your system, Apps, select system in the top right corner.
    - Force quit the App with the Peloton logo named "Device Management"
    - Plug your computer into the Peloton using a micro USB-B cable.  
