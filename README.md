@@ -1,7 +1,7 @@
 # OpenPelo
 <img src="./images/Icon.png" alt="icon" width="150"/>
 
-OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode. Combine this with [SmartSpin2k](https://Github.com/doudar/SmartSpin2k/) for the ultimate Zwift setup. 
+OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode. Combine this with [SmartSpin2k](https://Github.com/doudar/SmartSpin2k/) which adds automatic resistance, and virtual shifting for the ultimate Zwift setup. 
   
 ![image](./images/OpenPelo.png)
 ## Requirements
