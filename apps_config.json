@@ -16,13 +16,13 @@
             "description": "Only non-profit-backed browser that is secure, private & fast"
         },
         "Aurora Store": {
-            "url": "https://f-droid.org/repo/com.aurora.store_63.apk",
-            "package_name": "com.aurora.store",
+            "url": "https://f-droid.org/repo/com.aurora.store_65.apk",
+            "package_name": "com.aurora.store_65.apk",
             "description": "Open source Google Play Store client"
         },
         "Moonlight Streaming": {
             "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.1/app-nonRoot-release.apk",
-            "package_name": "com.moonlight",
+            "package_name": "app-nonRoot-release.apk",
             "description": "Streaming Client For Sunshine"
         },
         "MaterialFiles": {

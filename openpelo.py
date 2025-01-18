@@ -395,32 +395,17 @@ class OpenPeloGUI:
                 try:
                     self.status_label.config(text=f"Downloading {app_name}...")
                     
-                    # Handle SmartSpin2k differently as it comes in a zip file
+                    # Get the download URL - for SmartSpin2k, we need to get it from GitHub API
                     if app_name == "SmartSpin2k":
-                        # Get the actual download URL from GitHub API
                         response = urllib.request.urlopen(app_info['url'])
                         release_data = json.loads(response.read())
-                        zip_url = next(asset['browser_download_url'] for asset in release_data['assets'] if asset['name'].endswith('.zip'))
-                        
-                        # Download and process zip file
-                        zip_path = self.working_dir / "smartspin2k_temp.zip"
-                        urllib.request.urlretrieve(zip_url, zip_path)
-                        
-                        # Extract APK from zip
-                        apk_path = None
-                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                            # Find the APK file in the zip
-                            apk_file = next(f for f in zip_ref.namelist() if f.endswith('.apk'))
-                            # Extract only the APK file
-                            zip_ref.extract(apk_file, self.working_dir)
-                            apk_path = self.working_dir / apk_file
-                        
-                        # Clean up zip file
-                        zip_path.unlink()
+                        download_url = next(asset['browser_download_url'] for asset in release_data['assets'] if asset['name'].endswith('.apk'))
                     else:
-                        # Handle other apps normally
-                        apk_path = self.working_dir / f"{app_name.lower().replace(' ', '_')}.apk"
-                        urllib.request.urlretrieve(app_info['url'], apk_path)
+                        download_url = app_info['url']
+
+                    # Download the APK
+                    apk_path = self.working_dir / app_info['package_name']
+                    urllib.request.urlretrieve(download_url, apk_path)
 
                     # Install APK
                     self.status_label.config(text=f"Installing {app_name}...")
@@ -430,14 +415,8 @@ class OpenPeloGUI:
                         text=True
                     )
 
-                    # Clean up APK file and any extracted directories
+                    # Clean up APK file
                     apk_path.unlink()
-                    if app_name == "SmartSpin2k":
-                        # Clean up extracted build directory if it exists
-                        build_dir = self.working_dir / "build"
-                        if build_dir.exists():
-                            import shutil
-                            shutil.rmtree(build_dir)
 
                     if 'Success' not in result.stdout:
                         messagebox.showerror(
