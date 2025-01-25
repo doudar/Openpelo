@@ -140,7 +140,7 @@ jobs:
         name: OpenPelo-Linux
         path: dist/OpenPelo.AppImage
 
-  build-macos:
+  build-macos-arm:
     needs: [bump-version]
     runs-on: macos-latest
     if: github.event_name == 'push' || github.event_name == 'release'
@@ -163,17 +163,49 @@ jobs:
     - name: Package executable
       run: |
         cd dist
-        zip OpenPelo-macOS.zip OpenPelo
+        zip OpenPelo-macOS-ARM.zip OpenPelo
         cd ..
-
+    
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OpenPelo-macOS
-        path: dist/OpenPelo-macOS.zip
+        name: OpenPelo-macOS-ARM
+        path: dist/OpenPelo-macOS-ARM.zip
+
+  build-macos-intel:
+    needs: [bump-version]
+    runs-on: macos-13
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller certifi tk pillow
+    
+    - name: Build executable
+      run: |
+        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." openpelo.py
+        chmod +x dist/OpenPelo
+    
+    - name: Package executable
+      run: |
+        cd dist
+        zip OpenPelo-macOS-Intel.zip OpenPelo
+        cd ..
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-macOS-Intel
+        path: dist/OpenPelo-macOS-Intel.zip
 
   create-release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows, build-linux, build-macos-arm, build-macos-intel]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
@@ -197,4 +229,5 @@ jobs:
         files: |
           OpenPelo-Windows/OpenPelo.exe
           OpenPelo-Linux/OpenPelo.AppImage
-          OpenPelo-macOS/OpenPelo-macOS.zip
+          OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.zip
+          OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.zip
