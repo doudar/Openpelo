@@ -145,7 +145,18 @@ class OpenPeloGUI:
             bg='lightgreen',
             relief='raised'
         )
-        self.install_btn.grid(row=0, column=2, padx=5, pady=0)
+        self.install_btn.grid(row=0, column=3, padx=5, pady=(0, 10))
+
+        # Install Local APK button
+        self.install_local_btn = tk.Button(
+            buttons_frame,
+            text="Select different APK\n from computer",
+            command=self.install_local_apk,
+            state='disabled',
+            bg='lightblue',
+            relief='raised'
+        )
+        self.install_local_btn.grid(row=1, column=3, padx=5)
 
          # Media Controls Frame (row 5)
         media_frame = ttk.LabelFrame(self.root, text="Screen Recording Utility", style='Section.TLabelframe')
@@ -413,6 +424,7 @@ class OpenPeloGUI:
                     ).grid(row=i, column=1, sticky='w', padx=10)
                 
                 self.install_btn.config(state='normal')
+                self.install_local_btn.config(state='normal')
                 self.screenshot_btn.config(state='normal')
                 self.record_btn.config(state='normal')
             else:
@@ -420,6 +432,7 @@ class OpenPeloGUI:
                     text="❌ No device detected. Please connect your device and enable USB debugging."
                 )
                 self.install_btn.config(state='disabled')
+                self.install_local_btn.config(state='disabled')
                 self.screenshot_btn.config(state='disabled')
                 self.record_btn.config(state='disabled')
                 
@@ -505,6 +518,56 @@ class OpenPeloGUI:
         if not self.install_thread or not self.install_thread.is_alive():
             self.install_thread = threading.Thread(target=install)
             self.install_thread.start()
+
+    def install_local_apk(self):
+        """Install a local APK file selected by the user"""
+        apk_path = filedialog.askopenfilename(
+            title="Select APK File",
+            filetypes=[("Android Package", "*.apk")],
+            initialdir=os.path.expanduser("~")
+        )
+        
+        if not apk_path:
+            return
+            
+        def install():
+            self.install_btn.config(state='disabled')
+            self.install_local_btn.config(state='disabled')
+            self.refresh_btn.config(state='disabled')
+            self.progress.start()
+            
+            try:
+                self.status_label.config(text="Installing APK...")
+                result = subprocess.run(
+                    [str(self.adb_path), 'install', '-r', apk_path],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if 'Success' in result.stdout:
+                    messagebox.showinfo("Success", "APK installed successfully!")
+                    self.status_label.config(text="APK installation complete!")
+                else:
+                    messagebox.showerror(
+                        "Installation Error",
+                        f"Error installing APK: {result.stdout}"
+                    )
+                    self.status_label.config(text="APK installation failed.")
+            except Exception as e:
+                messagebox.showerror(
+                    "Error",
+                    f"Error installing APK: {str(e)}"
+                )
+                self.status_label.config(text="APK installation failed.")
+            finally:
+                self.progress.stop()
+                self.install_btn.config(state='normal')
+                self.install_local_btn.config(state='normal')
+                self.refresh_btn.config(state='normal')
+        
+        # Run installation in a separate thread
+        install_thread = threading.Thread(target=install)
+        install_thread.start()
 
     def show_debug_guide(self):
         """Show the USB debugging guide window"""
