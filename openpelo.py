@@ -43,7 +43,7 @@ class OpenPeloGUI:
         # Setup GUI
         self.root = tk.Tk()
         self.root.title("OpenPelo")
-        self.root.geometry("600x500")  # Increased height for new section
+        self.root.geometry("1000x700")  # Increased height for new section
         self.root.resizable(False, False)
         
         # Style
@@ -109,9 +109,9 @@ class OpenPeloGUI:
         self.progress.grid(row=2, column=0, columnspan=2, pady=10, padx=20)
 
         # Apps frame (row 4)
-        apps_frame = ttk.LabelFrame(self.root, text="Available Apps", style='Section.TLabelframe')
-        apps_frame.grid(row=3, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
-        apps_frame.grid_columnconfigure(0, weight=1)
+        self.apps_frame = ttk.LabelFrame(self.root, text="Available Apps", style='Section.TLabelframe')
+        self.apps_frame.grid(row=3, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
+        self.apps_frame.grid_columnconfigure(0, weight=1)
 
         # App checkboxes
         self.app_vars = {}
@@ -120,13 +120,13 @@ class OpenPeloGUI:
             self.app_vars[app_name] = var
             
             ttk.Checkbutton(
-                apps_frame,
+                self.apps_frame,
                 text=app_name,
                 variable=var
             ).grid(row=i, column=0, sticky='w')
             
             ttk.Label(
-                apps_frame,
+                self.apps_frame,
                 text=app_info.get('description', ''),
                 style='Status.TLabel'
             ).grid(row=i, column=1, sticky='w', padx=10)
@@ -185,7 +185,7 @@ class OpenPeloGUI:
         self.record_btn.pack(side='left', padx=5)
 
     def load_config(self):
-        """Load available apps from config file"""
+        """Load available apps from config file, filtered by device ABI"""
         try:
             if not self.config_path.exists():
                 messagebox.showerror("Error", "Config file not found!")
@@ -193,7 +193,21 @@ class OpenPeloGUI:
             
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
-                return config.get('apps', {})
+                all_apps = config.get('apps', {})
+
+            # Get device ABI
+            device_abi = self.get_device_abi()
+            
+            # Filter apps based on ABI
+            if device_abi == "armeabi-v7a":
+                # For gen 1 tablets, only show armeabi-v7a compatible apps
+                return {name: info for name, info in all_apps.items()
+                       if info.get('abi') == 'armeabi-v7a'}
+            else:
+                # For newer tablets, show arm64-v8a compatible apps
+                return {name: info for name, info in all_apps.items()
+                       if info.get('abi') == 'arm64-v8a'}
+                
         except Exception as e:
             messagebox.showerror("Error", f"Error loading config: {e}")
             return {}
@@ -235,6 +249,18 @@ class OpenPeloGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Error setting up ADB: {e}")
             return False
+
+    def get_device_abi(self):
+        """Get the device's CPU ABI"""
+        try:
+            result = subprocess.run(
+                [str(self.adb_path), 'shell', 'getprop', 'ro.product.cpu.abi'],
+                capture_output=True,
+                text=True
+            )
+            return result.stdout.strip()
+        except Exception:
+            return None
 
     def is_device_connected(self):
         """Check if device is connected via ADB"""
@@ -356,7 +382,36 @@ class OpenPeloGUI:
                     return
             
             if self.is_device_connected():
-                self.status_label.config(text="✅ Device connected")
+                # Get device ABI and update status
+                device_abi = self.get_device_abi()
+                abi_text = f" ({device_abi})" if device_abi else ""
+                self.status_label.config(text=f"✅ Device connected{abi_text}")
+                
+                # Reload apps based on ABI
+                self.available_apps = self.load_config()
+                
+                # Clear existing checkboxes
+                for widget in self.apps_frame.winfo_children():
+                    widget.destroy()
+                
+                # Recreate app checkboxes with filtered list
+                self.app_vars = {}
+                for i, (app_name, app_info) in enumerate(self.available_apps.items()):
+                    var = tk.BooleanVar()
+                    self.app_vars[app_name] = var
+                    
+                    ttk.Checkbutton(
+                        self.apps_frame,
+                        text=app_name,
+                        variable=var
+                    ).grid(row=i, column=0, sticky='w')
+                    
+                    ttk.Label(
+                        self.apps_frame,
+                        text=app_info.get('description', ''),
+                        style='Status.TLabel'
+                    ).grid(row=i, column=1, sticky='w', padx=10)
+                
                 self.install_btn.config(state='normal')
                 self.screenshot_btn.config(state='normal')
                 self.record_btn.config(state='normal')
@@ -367,6 +422,19 @@ class OpenPeloGUI:
                 self.install_btn.config(state='disabled')
                 self.screenshot_btn.config(state='disabled')
                 self.record_btn.config(state='disabled')
+                
+                # Clear app checkboxes when no device is connected
+                for widget in self.apps_frame.winfo_children():
+                    widget.destroy()
+                
+                # Add informative text when no apps are shown
+                ttk.Label(
+                    self.apps_frame,
+                    text="Compatible applications will be displayed here once your Peloton device is detected.",
+                    style='Status.TLabel',
+                    wraplength=400,
+                    justify='center'
+                ).grid(row=0, column=0, columnspan=2, pady=20)
             
             self.progress.stop()
             self.refresh_btn.config(state='normal')
