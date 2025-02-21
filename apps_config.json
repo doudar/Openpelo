@@ -56,7 +56,7 @@
         },
         "Emby": {
             "url": "https://github.com/MediaBrowser/Emby.Releases/raw/master/android/emby-android-google-arm64-v8a-release.apk",
-            "package_name": "emby-android-google-arm64-v8a-release.apkk",
+            "package_name": "emby-android-google-arm64-v8a-release.apk",
             "description": "Emby Client; must have access to you own Emby Server.  https://emby.media/about.html",
             "abi": "arm64-v8a"
         }
