@@ -1,15 +1,21 @@
 {
     "apps": {
+        "SmartSpin2k": {
+            "url": "https://api.github.com/repos/doudar/SS2kConfigApp/releases/latest",
+            "package_name": "SS2kConfigApp.apk",
+            "description": "Configuration and ERG workout app for the SmartSpin2k",
+            "abi": "arm64-v8a"
+        },
         "Nova Launcher": {
             "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
             "package_name": "Nova Launcher.apk",
             "description": "The premier custom launcher for Android",
             "abi": "arm64-v8a"
         },
-        "SmartSpin2k": {
-            "url": "https://api.github.com/repos/doudar/SS2kConfigApp/releases/latest",
-            "package_name": "SS2kConfigApp.apk",
-            "description": "Configuration and ERG workout app for the SmartSpin2k",
+        "Kvaesitso": {
+            "url": "https://f-droid.org/repo/de.mm20.launcher2.release_2025042101.apk",
+            "package_name": "de.mm20.launcher2.release_2025042101.apk",
+            "description": "Open Source Launcher. Install This *OR* Nova. You probably don't want both",
             "abi": "arm64-v8a"
         },
         "FireFox Focus": {
