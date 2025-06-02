@@ -16,6 +16,20 @@ from datetime import datetime
 class OpenPeloGUI:
     def __init__(self):
         self.system = platform.system().lower()
+
+        # --- Add/Modify this section for SSL configuration ---
+        try:
+            # For all systems, configure SSL to use certifi's CA bundle
+            cafile = certifi.where()
+            ssl_context = ssl.create_default_context(cafile=cafile)
+            ssl._create_default_https_context = lambda: ssl_context
+            
+            os.environ['REQUESTS_CA_BUNDLE'] = cafile
+            os.environ['SSL_CERT_FILE'] = cafile
+            print(f"Successfully configured SSL to use certifi CA bundle: {cafile}")
+        except Exception as e:
+            print(f"Error setting up SSL with certifi: {e}")
+
         self.working_dir = Path(os.path.dirname(os.path.abspath(__file__)))
         self.adb_path = self.working_dir / 'platform-tools' / ('adb.exe' if self.system == 'windows' else 'adb')
         
@@ -23,18 +37,6 @@ class OpenPeloGUI:
         self.save_location = os.path.expanduser("~/Documents/OpenPelo")
         if not os.path.exists(self.save_location):
             os.makedirs(self.save_location)
-        
-        # Setup SSL for macOS
-        if self.system == 'darwin':
-            try:
-                import certifi
-            except ImportError:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "certifi"])
-                import certifi
-            # Setup global SSL context
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
-            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
-            urllib.request.install_opener(opener)
         
         # Load available apps
         self.config_path = self.working_dir / 'apps_config.json'
