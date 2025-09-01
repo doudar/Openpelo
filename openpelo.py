@@ -30,7 +30,14 @@ class OpenPeloGUI:
         except Exception as e:
             print(f"Error setting up SSL with certifi: {e}")
 
-        self.working_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        # Handle different directory structures between PyInstaller and normal Python execution
+        if getattr(sys, 'frozen', False):
+            # If running from PyInstaller bundle
+            self.working_dir = Path(os.path.dirname(sys.executable))
+        else:
+            # If running as normal Python script
+            self.working_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+            
         self.adb_path = self.working_dir / 'platform-tools' / ('adb.exe' if self.system == 'windows' else 'adb')
         
         # Media save location
@@ -226,33 +233,43 @@ class OpenPeloGUI:
             return {}
 
     def setup_adb(self):
-        """Download and setup ADB if not already present"""
+        """Setup ADB from local files in the ADB folder if not already present"""
         if self.adb_path.exists():
             return True
 
         try:
-            self.status_label.config(text="Downloading ADB...")
+            self.status_label.config(text="Extracting ADB from local files...")
             
-            platform_tools_url = {
-                'windows': 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip',
-                'darwin': 'https://dl.google.com/android/repository/platform-tools-latest-darwin.zip',
-                'linux': 'https://dl.google.com/android/repository/platform-tools-latest-linux.zip'
+            platform_tools_zip = {
+                'windows': 'platform-tools-latest-windows.zip',
+                'darwin': 'platform-tools-latest-darwin.zip',
+                'linux': 'platform-tools-latest-linux.zip'
             }
 
-            if self.system not in platform_tools_url:
+            if self.system not in platform_tools_zip:
                 messagebox.showerror("Error", f"Unsupported operating system: {self.system}")
                 return False
 
-            # Download platform-tools
-            zip_path = self.working_dir / 'platform-tools.zip'
-            urllib.request.urlretrieve(platform_tools_url[self.system], zip_path)
+            # Use local ADB files - handle PyInstaller bundled path
+            # Check if running from frozen executable (PyInstaller)
+            if getattr(sys, 'frozen', False):
+                # If running from PyInstaller bundle - only one platform-specific zip is included
+                base_path = Path(sys._MEIPASS)
+                zip_filename = platform_tools_zip[self.system]
+                zip_path = base_path / 'ADB' / zip_filename
+            else:
+                # If running as normal Python script - we might have all zips
+                zip_path = self.working_dir / 'ADB' / platform_tools_zip[self.system]
+                
+            if not zip_path.exists():
+                messagebox.showerror("Error", f"ADB file not found: {zip_path}")
+                return False
 
             # Extract platform-tools
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(self.working_dir)
-
-            # Clean up zip file
-            zip_path.unlink()
+                
+            # Note: We don't delete the zip file since it's our local copy
 
             # Make ADB executable on Unix-like systems
             if self.system != 'windows':
