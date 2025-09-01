@@ -46,7 +46,14 @@ class OpenPeloGUI:
             os.makedirs(self.save_location)
         
         # Load available apps
-        self.config_path = self.working_dir / 'apps_config.json'
+        if getattr(sys, 'frozen', False):
+            # If running from PyInstaller bundle
+            base_path = Path(sys._MEIPASS)
+            self.config_path = base_path / 'apps_config.json'
+        else:
+            # If running as normal Python script
+            self.config_path = self.working_dir / 'apps_config.json'
+            
         self.available_apps = self.load_config()
         
         # Setup GUI
@@ -208,7 +215,9 @@ class OpenPeloGUI:
         """Load available apps from config file, filtered by device ABI"""
         try:
             if not self.config_path.exists():
-                messagebox.showerror("Error", "Config file not found!")
+                error_msg = f"Config file not found at: {self.config_path}"
+                print(error_msg)  # Also print to console for debugging
+                messagebox.showerror("Error", error_msg)
                 return {}
             
             with open(self.config_path, 'r') as f:
@@ -612,10 +621,11 @@ class UsbDebugGuide:
             # Get the correct path whether running as script or frozen exe
             if getattr(sys, 'frozen', False):
                 # Running as compiled executable
-                steps_path = os.path.join(sys._MEIPASS, 'usb_debug_steps.json')
+                base_path = Path(sys._MEIPASS)
+                steps_path = base_path / 'usb_debug_steps.json'
             else:
                 # Running as script
-                steps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'usb_debug_steps.json')
+                steps_path = self.working_dir / 'usb_debug_steps.json'
             
             with open(steps_path, 'r') as f:
                 self.steps = json.load(f)['steps']
