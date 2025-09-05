@@ -2,6 +2,7 @@ import os
 import sys
 import platform
 import urllib.request
+from urllib.parse import urlparse
 import zipfile
 import subprocess
 import certifi
@@ -73,6 +74,32 @@ class OpenPeloGUI:
         self.install_thread = None
         self.recording_process = None
         self.is_recording = False
+
+        # Ensure the window stays on top on launch (Windows console can steal focus)
+        self.root.after(100, self._bring_to_front)
+
+    def _subprocess_kwargs(self):
+        """Common subprocess kwargs to avoid flashing a console window on Windows."""
+        if self.system.startswith('win'):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            return {
+                'startupinfo': startupinfo,
+                'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            }
+        return {}
+
+    def _bring_to_front(self):
+        """Bring main window to front and refocus after launch."""
+        try:
+            self.root.lift()
+            self.root.focus_force()
+            if self.system.startswith('win'):
+                # Toggle topmost to ensure it raises above other windows
+                self.root.attributes('-topmost', True)
+                self.root.after(200, lambda: self.root.attributes('-topmost', False))
+        except Exception:
+            pass
 
     def setup_gui(self):
         # Configure grid
@@ -295,7 +322,8 @@ class OpenPeloGUI:
             result = subprocess.run(
                 [str(self.adb_path), 'shell', 'getprop', 'ro.product.cpu.abi'],
                 capture_output=True,
-                text=True
+                text=True,
+                **self._subprocess_kwargs()
             )
             return result.stdout.strip()
         except Exception:
@@ -307,7 +335,8 @@ class OpenPeloGUI:
             result = subprocess.run(
                 [str(self.adb_path), 'devices'],
                 capture_output=True,
-                text=True
+                text=True,
+                **self._subprocess_kwargs()
             )
             return len(result.stdout.strip().split('\n')) > 1
         except Exception:
@@ -333,19 +362,22 @@ class OpenPeloGUI:
             # Take screenshot
             subprocess.run(
                 [str(self.adb_path), 'shell', 'screencap', '-p', '/sdcard/screenshot.png'],
-                check=True
+                check=True,
+                **self._subprocess_kwargs()
             )
             
             # Pull screenshot from device
             subprocess.run(
                 [str(self.adb_path), 'pull', '/sdcard/screenshot.png', save_path],
-                check=True
+                check=True,
+                **self._subprocess_kwargs()
             )
             
             # Clean up device
             subprocess.run(
                 [str(self.adb_path), 'shell', 'rm', '/sdcard/screenshot.png'],
-                check=True
+                check=True,
+                **self._subprocess_kwargs()
             )
             
             messagebox.showinfo("Success", f"Screenshot saved to:\n{save_path}")
@@ -364,7 +396,8 @@ class OpenPeloGUI:
                 self.recording_process = subprocess.Popen(
                     [str(self.adb_path), 'shell', 'screenrecord', device_path],
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    **self._subprocess_kwargs()
                 )
                 
                 self.is_recording = True
@@ -387,13 +420,15 @@ class OpenPeloGUI:
                 save_path = os.path.join(self.save_location, self.current_recording)
                 subprocess.run(
                     [str(self.adb_path), 'pull', f'/sdcard/{self.current_recording}', save_path],
-                    check=True
+                    check=True,
+                    **self._subprocess_kwargs()
                 )
                 
                 # Clean up device
                 subprocess.run(
                     [str(self.adb_path), 'shell', 'rm', f'/sdcard/{self.current_recording}'],
-                    check=True
+                    check=True,
+                    **self._subprocess_kwargs()
                 )
                 
                 self.is_recording = False
@@ -503,14 +538,12 @@ class OpenPeloGUI:
             for app_name, app_info in selected_apps.items():
                 try:
                     self.status_label.config(text=f"Downloading {app_name}...")
-                    
-                    # Get the download URL - for SmartSpin2k, we need to get it from GitHub API
-                    if app_name == "SmartSpin2k":
-                        response = urllib.request.urlopen(app_info['url'])
-                        release_data = json.loads(response.read())
-                        download_url = next(asset['browser_download_url'] for asset in release_data['assets'] if asset['name'].endswith('.apk'))
-                    else:
-                        download_url = app_info['url']
+
+                    # Resolve the actual download URL. If it's a GitHub URL, use the GitHub API
+                    download_url = self.resolve_download_url(
+                        app_info.get('url', ''),
+                        app_info.get('package_name')
+                    )
 
                     # Download the APK
                     apk_path = self.working_dir / app_info['package_name']
@@ -521,7 +554,8 @@ class OpenPeloGUI:
                     result = subprocess.run(
                         [str(self.adb_path), 'install', '-r', str(apk_path)],
                         capture_output=True,
-                        text=True
+                        text=True,
+                        **self._subprocess_kwargs()
                     )
 
                     # Clean up APK file
@@ -547,6 +581,78 @@ class OpenPeloGUI:
             self.install_thread = threading.Thread(target=install)
             self.install_thread.start()
 
+    def resolve_download_url(self, url: str, package_name: str | None = None) -> str:
+        """Resolve a final download URL.
+
+        - If the URL points to GitHub (releases), query the GitHub API to find the APK asset.
+        - Otherwise, return the URL as-is.
+
+        Preference order for assets when using the API:
+        1) Exact match to package_name (if provided)
+        2) Any asset ending with .apk
+        3) Fallback to the first asset
+        """
+        try:
+            if not url:
+                return url
+
+            parsed = urlparse(url)
+            host = (parsed.netloc or '').lower()
+            path = parsed.path or ''
+
+            is_github = 'github.com' in host or 'api.github.com' in host
+            if not is_github:
+                return url
+
+            # Build API URL
+            if 'api.github.com' in host:
+                api_url = url
+            else:
+                # Convert common GitHub releases URLs to API
+                # Supported patterns:
+                #   /<owner>/<repo>/releases/latest
+                #   /<owner>/<repo>/releases/tag/<tag>
+                parts = [p for p in path.split('/') if p]
+                if len(parts) >= 4 and parts[2] == 'releases':
+                    owner, repo = parts[0], parts[1]
+                    if parts[3] == 'latest':
+                        api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                    elif parts[3] == 'tag' and len(parts) >= 5:
+                        tag = parts[4]
+                        api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+                    else:
+                        # Unknown releases pattern; fall back to original URL
+                        return url
+                else:
+                    # Not a releases URL; could already be a direct asset link — use as-is
+                    return url
+
+            # Query GitHub API for assets
+            with urllib.request.urlopen(api_url) as resp:
+                release_data = json.loads(resp.read())
+            assets = release_data.get('assets', []) or []
+            if not assets:
+                return url
+
+            # Try exact match on package_name
+            if package_name:
+                for a in assets:
+                    if a.get('name') == package_name:
+                        return a.get('browser_download_url') or url
+
+            # Then any APK
+            for a in assets:
+                name = a.get('name', '').lower()
+                if name.endswith('.apk'):
+                    return a.get('browser_download_url') or url
+
+            # Fallback to first asset
+            return assets[0].get('browser_download_url') or url
+
+        except Exception:
+            # On any error, just return the original URL
+            return url
+
     def install_local_apk(self):
         """Install a local APK file selected by the user"""
         apk_path = filedialog.askopenfilename(
@@ -569,7 +675,8 @@ class OpenPeloGUI:
                 result = subprocess.run(
                     [str(self.adb_path), 'install', '-r', apk_path],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    **self._subprocess_kwargs()
                 )
                 
                 if 'Success' in result.stdout:

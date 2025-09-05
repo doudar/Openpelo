@@ -6,6 +6,12 @@
             "description": "Configuration and ERG workout app for the SmartSpin2k",
             "abi": "arm64-v8a"
         },
+        "Grupetto": {
+            "url": "https://api.github.com/repos/doudar/grupetto/releases/latest",
+            "package_name": "grupetto.apk",
+            "description": "Sends bike data via BLE and provides a data metrics overlay",
+            "abi": "arm64-v8a"
+        },
         "Nova Launcher": {
             "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
             "package_name": "Nova Launcher.apk",
@@ -65,6 +71,18 @@
             "package_name": "emby-android-google-arm64-v8a-release.apk",
             "description": "Emby Client; must have access to you own Emby Server.  https://emby.media/about.html",
             "abi": "arm64-v8a"
+        },
+        "SkyTube": {
+            "url": "https://api.github.com/repos/SkyTubeTeam/SkyTube/releases/latest",
+            "package_name": "skytube.apk",
+            "description": "An open source YouTube client for Android.",
+            "abi": "arm64-v8a"
+        },
+        "SkyTubeLegacy": {
+            "url": "https://api.github.com/repos/SkyTubeTeam/SkyTubeLegacy/releases/latest",
+            "package_name": "skytubelegacy.apk",
+            "description": "An open source YouTube client for Android.",
+            "abi": "armeabi-v7a"
         }
     }
 }
