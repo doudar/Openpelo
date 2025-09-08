@@ -1,0 +1,7 @@
+# PyInstaller output
+/build/
+/dist/
+OpenPelo.spec
+
+# Byte-compiled / cache
+__pycache__/

@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 class OpenPeloGUI:
     def __init__(self):
@@ -581,7 +582,7 @@ class OpenPeloGUI:
             self.install_thread = threading.Thread(target=install)
             self.install_thread.start()
 
-    def resolve_download_url(self, url: str, package_name: str | None = None) -> str:
+    def resolve_download_url(self, url: str, package_name: Optional[str] = None) -> str:
         """Resolve a final download URL.
 
         - If the URL points to GitHub (releases), query the GitHub API to find the APK asset.
