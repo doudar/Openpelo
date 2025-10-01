@@ -985,28 +985,58 @@ class WirelessPairingDialog:
                     self.cancel_btn.config(state='normal')
                     return
                 
-                # Step 2: Get the connection port (usually 5555, but ask user or use default)
-                # The pairing port is different from the connection port
-                # Typically, wireless debugging uses port 5555 for connection after pairing
-                connection_port = "5555"
-                
+                # Step 2: Connect to the device
+                # After pairing, we need to connect. The connection port is shown on the main
+                # wireless debugging screen (not the pairing dialog). Try common ports.
                 self.status_label.config(text="Connecting to device...")
                 self.window.update()
                 
-                connect_result = subprocess.run(
-                    [str(self.adb_path), 'connect', f'{ip}:{connection_port}'],
+                # Try to find the device's connection port by checking adb devices
+                # After pairing, the device should show up
+                devices_result = subprocess.run(
+                    [str(self.adb_path), 'devices'],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=10,
                     **self.subprocess_kwargs
                 )
                 
-                if connect_result.returncode != 0 or 'failed' in connect_result.stdout.lower():
-                    error_msg = connect_result.stdout + connect_result.stderr
-                    self.status_label.config(text="Connection failed!")
-                    messagebox.showerror(
-                        "Connection Failed",
-                        f"Failed to connect to device. Please try again.\n\nError: {error_msg}"
+                # Check if device is already connected after pairing
+                if 'device' in devices_result.stdout and ip in devices_result.stdout:
+                    # Device is already connected after pairing
+                    self.status_label.config(text="Successfully connected!")
+                    messagebox.showinfo(
+                        "Success",
+                        f"Successfully connected to device via WiFi!\n\nYou can now use OpenPelo wirelessly."
+                    )
+                    self.window.destroy()
+                    return
+                
+                # Try common wireless debugging ports
+                connection_ports = ["5555", "5556", "37000", "40000"]
+                connected = False
+                
+                for connection_port in connection_ports:
+                    try:
+                        connect_result = subprocess.run(
+                            [str(self.adb_path), 'connect', f'{ip}:{connection_port}'],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                            **self.subprocess_kwargs
+                        )
+                        
+                        if connect_result.returncode == 0 and 'connected' in connect_result.stdout.lower():
+                            connected = True
+                            break
+                    except:
+                        continue
+                
+                if not connected:
+                    self.status_label.config(text="Auto-connect failed!")
+                    messagebox.showwarning(
+                        "Connection Info Needed",
+                        "Automatic connection failed. Please check the main wireless debugging screen on your Peloton for the connection IP and port (different from the pairing port), then try using 'adb connect IP:PORT' manually or restart OpenPelo and try again."
                     )
                     self.connect_btn.config(state='normal')
                     self.cancel_btn.config(state='normal')
