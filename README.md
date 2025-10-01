@@ -7,7 +7,7 @@ OpenPelo is a cross-platform tool for installing additional apps on your Peloton
 ## Requirements
 
 - Python 3.6 or higher
-- USB cable to connect your Peloton
+- USB cable to connect your Peloton (for initial setup), or WiFi network (for wireless connection)
 - USB debugging enabled on your Peloton
 
 ## Installation
@@ -31,6 +31,7 @@ Watch on YouTube:
 
 ## Usage
 
+### Option 1: USB Connection (Recommended for First Setup)
 1. Connect your Peloton to your computer via USB
 2. Enable USB debugging on your Peloton:
    - Make sure your bike sensor cable is connected to the Peloton Tablet.
@@ -55,16 +56,41 @@ Watch on YouTube:
    - Select the apps you want to install by checking the boxes
    - Click "Install Selected Apps" and wait for the installation to complete
 
+### Option 2: Wireless ADB Connection
+Once you have enabled Developer Options (see Option 1), you can connect wirelessly:
+
+1. **Enable Wireless Debugging on your Peloton:**
+   - Make sure your Peloton and computer are on the same WiFi network
+   - Go to Settings → Developer Options
+   - Enable "Wireless debugging"
+   - Tap on "Wireless debugging" text to open settings
+
+2. **Connect via OpenPelo:**
+   - Run OpenPelo
+   - Click the "📶 Connect via WiFi" button
+   - Follow the step-by-step guide
+   - When prompted, tap "Pair device with pairing code" on your Peloton
+   - Enter the displayed IP address, port, and pairing code into OpenPelo
+   - Click "Connect"
+   - Wait for "Successfully connected!" message
+
+3. **Use OpenPelo wirelessly:**
+   - Once connected, you can use all features wirelessly
+   - Select apps and install them as you would with USB
+   - Take screenshots and record screen wirelessly
+
 ## Features
 
 - Modern graphical user interface
+- USB and Wireless ADB connection support
 - Real-time device connection status
 - Visual progress indicators
 - Easy app selection with checkboxes
 - Automatic ADB installation and setup
-- Cross-platform compatibility (Windows, Mac)
+- Cross-platform compatibility (Windows, Mac, Linux)
 - Automatic app downloading and installation
 - Configuration-based app management
+- Screen recording and screenshot utilities
 
 ## For Developers
 
@@ -128,6 +154,21 @@ To create a new release:
    - Ensure your internet connection is stable
    - Try installing apps one at a time
    - Check the error message shown in the popup for specific issues
+
+4. Wireless Connection Issues
+   - "Pairing Failed"
+     - Verify your Peloton and computer are on the same WiFi network
+     - Double-check the IP address, port, and pairing code
+     - Make sure wireless debugging is still enabled on your Peloton
+     - Try generating a new pairing code on your Peloton
+   - "Connection Timeout"
+     - Check your WiFi connection strength
+     - Ensure no firewall is blocking the connection
+     - Try moving your computer closer to the WiFi router
+   - "Connection Failed after pairing"
+     - The device may have disconnected. Try clicking "🔄 Refresh"
+     - Try connecting again using the "📶 Connect via WiFi" button
+     - Restart wireless debugging on your Peloton and try again
 
 ## Security Note
 
