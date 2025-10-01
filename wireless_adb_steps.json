@@ -1,0 +1,28 @@
+{
+    "steps": [
+        {
+            "title": "Access Settings",
+            "description": "On your Peloton tablet, tap the three dots in the bottom right corner to open the Settings menu."
+        },
+        {
+            "title": "Open Developer Options",
+            "description": "Go to Settings -> Developer Options (if you don't see Developer Options, you need to enable it first using the Developer Mode Guide)"
+        },
+        {
+            "title": "Enable Wireless Debugging",
+            "description": "In Developer Options, find and enable \"Wireless debugging\""
+        },
+        {
+            "title": "Open Wireless Debugging Settings",
+            "description": "Tap directly on the text \"Wireless debugging\" to open the wireless debugging settings window"
+        },
+        {
+            "title": "Pair Device with Pairing Code",
+            "description": "In the wireless debugging window, tap \"Pair device with pairing code\""
+        },
+        {
+            "title": "Note Pairing Information",
+            "description": "A dialog will appear showing:\n- WiFi pairing code (6 digits)\n- IP address\n- Port number\n\nKeep this window open and click Next to enter this information in OpenPelo"
+        }
+    ]
+}
