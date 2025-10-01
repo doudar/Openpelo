@@ -856,7 +856,7 @@ class WirelessPairingDialog:
         self.subprocess_kwargs = subprocess_kwargs
         self.window = tk.Toplevel(parent)
         self.window.title("Wireless Pairing")
-        self.window.geometry("400x350")
+        self.window.geometry("400x400")
         self.window.resizable(False, False)
         
         self.setup_gui()
@@ -874,7 +874,7 @@ class WirelessPairingDialog:
         # Info text
         info_label = ttk.Label(
             self.window,
-            text="Enter the information shown on your Peloton's wireless debugging pairing dialog:",
+            text="Enter the information shown on your Peloton's wireless debugging pairing dialog. \n \n The last port is on the main wireless debugging screen, not the pairing dialog. (look left, it's greyed out.) ",
             wraplength=360,
             justify='center',
             padding=(0, 10)
@@ -884,25 +884,31 @@ class WirelessPairingDialog:
         # Input fields frame
         input_frame = ttk.Frame(self.window)
         input_frame.pack(fill='both', expand=True, padx=20, pady=10)
-        
-        # IP Address
-        ttk.Label(input_frame, text="IP Address:").grid(row=0, column=0, sticky='w', pady=5)
-        self.ip_var = tk.StringVar()
-        self.ip_entry = ttk.Entry(input_frame, textvariable=self.ip_var, width=30)
-        self.ip_entry.grid(row=0, column=1, pady=5, padx=5)
-        
-        # Port
-        ttk.Label(input_frame, text="Port:").grid(row=1, column=0, sticky='w', pady=5)
-        self.port_var = tk.StringVar()
-        self.port_entry = ttk.Entry(input_frame, textvariable=self.port_var, width=30)
-        self.port_entry.grid(row=1, column=1, pady=5, padx=5)
-        
+
         # Pairing Code
-        ttk.Label(input_frame, text="Pairing Code:").grid(row=2, column=0, sticky='w', pady=5)
+        ttk.Label(input_frame, text="Pairing Code:").grid(row=0, column=0, sticky='w', pady=5)
         self.code_var = tk.StringVar()
         self.code_entry = ttk.Entry(input_frame, textvariable=self.code_var, width=30)
-        self.code_entry.grid(row=2, column=1, pady=5, padx=5)
+        self.code_entry.grid(row=0, column=1, pady=5, padx=5)
+
+        # IP Address
+        ttk.Label(input_frame, text="IP Address:").grid(row=1, column=0, sticky='w', pady=5)
+        self.ip_var = tk.StringVar()
+        self.ip_entry = ttk.Entry(input_frame, textvariable=self.ip_var, width=30)
+        self.ip_entry.grid(row=1, column=1, pady=5, padx=5)
         
+        # Port
+        ttk.Label(input_frame, text="Port from pairing screen:").grid(row=2, column=0, sticky='w', pady=5)
+        self.port_var = tk.StringVar()
+        self.port_entry = ttk.Entry(input_frame, textvariable=self.port_var, width=30)
+        self.port_entry.grid(row=2, column=1, pady=5, padx=5)
+        
+        # Connection Port
+        ttk.Label(input_frame, text="Port from wireless debugging screen:").grid(row=3, column=0, sticky='w', pady=5)
+        self.conport_var = tk.StringVar()
+        self.conport_entry = ttk.Entry(input_frame, textvariable=self.conport_var, width=30)
+        self.conport_entry.grid(row=3, column=1, pady=5, padx=5)
+
         # Status label
         self.status_label = ttk.Label(
             self.window,
@@ -938,10 +944,11 @@ class WirelessPairingDialog:
         self.ip_var.trace('w', self.check_fields)
         self.port_var.trace('w', self.check_fields)
         self.code_var.trace('w', self.check_fields)
+        self.conport_var.trace('w', self.check_fields)
     
     def check_fields(self, *args):
         """Enable connect button when all fields are filled"""
-        if self.ip_var.get() and self.port_var.get() and self.code_var.get():
+        if self.ip_var.get() and self.port_var.get() and self.code_var.get() and self.conport_var.get():
             self.connect_btn.config(state='normal')
         else:
             self.connect_btn.config(state='disabled')
@@ -951,8 +958,9 @@ class WirelessPairingDialog:
         ip = self.ip_var.get().strip()
         port = self.port_var.get().strip()
         code = self.code_var.get().strip()
-        
-        if not ip or not port or not code:
+        conport = self.conport_var.get().strip()
+
+        if not ip or not port or not code or not conport:
             messagebox.showerror("Error", "Please fill in all fields")
             return
         
@@ -1013,24 +1021,19 @@ class WirelessPairingDialog:
                     return
                 
                 # Try common wireless debugging ports
-                connection_ports = ["5555", "5556", "37000", "40000"]
                 connected = False
                 
-                for connection_port in connection_ports:
-                    try:
-                        connect_result = subprocess.run(
-                            [str(self.adb_path), 'connect', f'{ip}:{connection_port}'],
-                            capture_output=True,
-                            text=True,
-                            timeout=10,
-                            **self.subprocess_kwargs
-                        )
+                connect_result = subprocess.run(
+                    [str(self.adb_path), 'connect', f'{ip}:{conport}'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    **self.subprocess_kwargs
+                    )
                         
-                        if connect_result.returncode == 0 and 'connected' in connect_result.stdout.lower():
-                            connected = True
-                            break
-                    except:
-                        continue
+                if connect_result.returncode == 0 and 'connected' in connect_result.stdout.lower():
+                    connected = True
+                            
                 
                 if not connected:
                     self.status_label.config(text="Auto-connect failed!")
