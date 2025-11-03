@@ -114,12 +114,6 @@
             "description": "Alternative file manager for Gen 1 - Material design with cloud support",
             "abi": "armeabi-v7a"
         },
-        "xManager": {
-            "url": "https://github.com/Team-xManager/xManager/releases/download/5.9/xManager.apk",
-            "package_name": "xManager.apk",
-            "description": "Spotify manager for Gen 1 - Listen to music while exercising",
-            "abi": "armeabi-v7a"
-        },
         "RadioDroid": {
             "url": "https://github.com/segler-alex/RadioDroid/releases/download/0.86/RadioDroid-free-release-0.86-bafa5f3.apk",
             "package_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
