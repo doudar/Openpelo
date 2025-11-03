@@ -49,15 +49,15 @@
             "abi": "arm64-v8a"
         },
         "FDroid": {
-            "url": "https://f-droid.org/archive/org.fdroid.fdroid_1015060.apk",
-            "package_name": "org.fdroid.fdroid_1015060.apk",
-            "description": "Open source app store for Gen 1 - Updated to v1.15.6",
+            "url": "https://f-droid.org/F-Droid.apk",
+            "package_name": "F-Droid.apk",
+            "description": "Open source app store for Gen 1 - Latest stable version",
             "abi": "armeabi-v7a"
         },
         "KISS Launcher": {
-            "url": "https://f-droid.org/repo/fr.neamar.kiss_212.apk",
-            "package_name": "fr.neamar.kiss_212.apk",
-            "description": "Fast, lightweight launcher for Gen 1 - Updated version",
+            "url": "https://f-droid.org/repo/fr.neamar.kiss_211.apk",
+            "package_name": "fr.neamar.kiss_211.apk",
+            "description": "Fast, lightweight launcher for Gen 1",
             "abi": "armeabi-v7a"
         },
         "Firefox ESR": {
@@ -97,21 +97,33 @@
             "abi": "armeabi-v7a"
         },
         "Simple File Manager": {
-            "url": "https://github.com/SimpleMobileTools/Simple-File-Manager/releases/download/6.11.3/file-manager-6.11.3.apk",
-            "package_name": "file-manager-6.11.3.apk",
+            "url": "https://github.com/SimpleMobileTools/Simple-File-Manager/releases/download/6.16.1/file-manager-fdroid-release.apk",
+            "package_name": "file-manager-fdroid-release.apk",
             "description": "Easy file manager for Gen 1 - Browse, manage files and folders",
             "abi": "armeabi-v7a"
         },
         "Simple Gallery": {
-            "url": "https://github.com/SimpleMobileTools/Simple-Gallery/releases/download/6.26.4/gallery-6.26.4.apk",
-            "package_name": "gallery-6.26.4.apk",
+            "url": "https://github.com/SimpleMobileTools/Simple-Gallery/releases/download/6.28.1/gallery-396-foss-release.apk",
+            "package_name": "gallery-396-foss-release.apk",
             "description": "Photo & video viewer for Gen 1 - Lightweight and easy to use",
             "abi": "armeabi-v7a"
         },
-        "Shelter": {
-            "url": "https://f-droid.org/repo/net.typeblog.shelter_16.apk",
-            "package_name": "net.typeblog.shelter_16.apk",
-            "description": "Isolate and freeze apps using work profile for Gen 1",
+        "Amaze File Manager": {
+            "url": "https://github.com/TeamAmaze/AmazeFileManager/releases/download/v3.10/app-fdroid-release.apk",
+            "package_name": "amaze-fdroid-release.apk",
+            "description": "Alternative file manager for Gen 1 - Material design with cloud support",
+            "abi": "armeabi-v7a"
+        },
+        "xManager": {
+            "url": "https://github.com/Team-xManager/xManager/releases/download/5.9/xManager.apk",
+            "package_name": "xManager.apk",
+            "description": "Spotify manager for Gen 1 - Listen to music while exercising",
+            "abi": "armeabi-v7a"
+        },
+        "RadioDroid": {
+            "url": "https://github.com/segler-alex/RadioDroid/releases/download/0.86/RadioDroid-free-release-0.86-bafa5f3.apk",
+            "package_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
+            "description": "Internet radio player for Gen 1 - Thousands of stations for your workout",
             "abi": "armeabi-v7a"
         }
     }
