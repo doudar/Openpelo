@@ -57,7 +57,7 @@
         "KISS Launcher": {
             "url": "https://f-droid.org/repo/fr.neamar.kiss_212.apk",
             "package_name": "fr.neamar.kiss_212.apk",
-            "description": "Fast, lightweight launcher for Gen 1 - Updated to v3.11.4",
+            "description": "Fast, lightweight launcher for Gen 1 - Updated version",
             "abi": "armeabi-v7a"
         },
         "Firefox ESR": {
