@@ -49,21 +49,21 @@
             "abi": "arm64-v8a"
         },
         "FDroid": {
-            "url": "https://f-droid.org/archive/org.fdroid.fdroid_1012051.apk",
-            "package_name": "org.fdroid.fdroid_1012051.apk",
-            "description": "An open source Store for gen 1 Peloton Tablet.",
+            "url": "https://f-droid.org/F-Droid.apk",
+            "package_name": "F-Droid.apk",
+            "description": "Open source app store for Gen 1 - Latest stable version",
             "abi": "armeabi-v7a"
         },
         "KISS Launcher": {
             "url": "https://f-droid.org/repo/fr.neamar.kiss_211.apk",
             "package_name": "fr.neamar.kiss_211.apk",
-            "description": "An open source Launcher for the gen 1 Peloton Tablet.",
+            "description": "Fast, lightweight launcher for Gen 1",
             "abi": "armeabi-v7a"
         },
-        "Old Firefox": {
+        "Firefox ESR": {
             "url": "https://ftp.mozilla.org/pub/mobile/releases/68.11.0/android-api-16/en-US/fennec-68.11.0.en-US.android-arm.apk",
             "package_name": "fennec-68.11.0.en-US.android-arm.apk",
-            "description": "Old version of Firefox for the gen 1 Peloton Tablet.",
+            "description": "Firefox ESR 68.11 - Last version supporting Android 4.4+ and Gen 1",
             "abi": "armeabi-v7a"
         },
         "Emby": {
@@ -81,7 +81,43 @@
         "SkyTubeLegacy": {
             "url": "https://api.github.com/repos/SkyTubeTeam/SkyTubeLegacy/releases/latest",
             "package_name": "skytubelegacy.apk",
-            "description": "An open source YouTube client for Android.",
+            "description": "YouTube client for Gen 1 - No Google account required",
+            "abi": "armeabi-v7a"
+        },
+        "NewPipe Legacy": {
+            "url": "https://github.com/TeamNewPipe/NewPipe/releases/download/v0.21.16/NewPipe_v0.21.16.apk",
+            "package_name": "NewPipe_v0.21.16.apk",
+            "description": "Lightweight YouTube/media client for Gen 1 - Privacy focused",
+            "abi": "armeabi-v7a"
+        },
+        "VLC Legacy": {
+            "url": "https://get.videolan.org/vlc-android/3.2.12/VLC-Android-3.2.12-armeabi-v7a.apk",
+            "package_name": "VLC-Android-3.2.12-armeabi-v7a.apk",
+            "description": "VLC media player v3.2.12 for Gen 1 - Plays almost any video/audio format",
+            "abi": "armeabi-v7a"
+        },
+        "Simple File Manager": {
+            "url": "https://github.com/SimpleMobileTools/Simple-File-Manager/releases/download/6.16.1/file-manager-fdroid-release.apk",
+            "package_name": "file-manager-fdroid-release.apk",
+            "description": "Easy file manager for Gen 1 - Browse, manage files and folders",
+            "abi": "armeabi-v7a"
+        },
+        "Simple Gallery": {
+            "url": "https://github.com/SimpleMobileTools/Simple-Gallery/releases/download/6.28.1/gallery-396-foss-release.apk",
+            "package_name": "gallery-396-foss-release.apk",
+            "description": "Photo & video viewer for Gen 1 - Lightweight and easy to use",
+            "abi": "armeabi-v7a"
+        },
+        "Amaze File Manager": {
+            "url": "https://github.com/TeamAmaze/AmazeFileManager/releases/download/v3.10/app-fdroid-release.apk",
+            "package_name": "amaze-fdroid-release.apk",
+            "description": "Alternative file manager for Gen 1 - Material design with cloud support",
+            "abi": "armeabi-v7a"
+        },
+        "RadioDroid": {
+            "url": "https://github.com/segler-alex/RadioDroid/releases/download/0.86/RadioDroid-free-release-0.86-bafa5f3.apk",
+            "package_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
+            "description": "Internet radio player for Gen 1 - Thousands of stations for your workout",
             "abi": "armeabi-v7a"
         }
     }
