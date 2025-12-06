@@ -31,9 +31,21 @@
             "abi": "arm64-v8a"
         },
         "Aurora Store": {
-            "url": "https://f-droid.org/repo/com.aurora.store_65.apk",
-            "package_name": "com.aurora.store_65.apk",
+            "url": "https://f-droid.org/repo/com.aurora.store_71.apk",
+            "package_name": "com.aurora.store_71.apk",
             "description": "Open source Google Play Store client",
+            "abi": "arm64-v8a"
+        },
+        "FDroid": {
+            "url": "https://f-droid.org/F-Droid.apk",
+            "package_name": "F-Droid.apk",
+            "description": "Open source app store",
+            "abi": "arm64-v8a"
+        },
+        "Obtanium": {
+            "url": https://github.com/ImranR98/Obtainium/releases/latest",
+            "package_name": "app-arm64-v8a-release.apk",
+            "description": "Setup automatic updates of non-store apps",
             "abi": "arm64-v8a"
         },
         "Moonlight Streaming": {
