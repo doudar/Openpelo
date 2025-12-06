@@ -43,7 +43,7 @@
             "abi": "arm64-v8a"
         },
         "Obtanium": {
-            "url": https://github.com/ImranR98/Obtainium/releases/latest",
+            "url": "https://github.com/ImranR98/Obtainium/releases/latest",
             "package_name": "app-arm64-v8a-release.apk",
             "description": "Setup automatic updates of non-store apps",
             "abi": "arm64-v8a"
@@ -60,7 +60,7 @@
             "description": "An open source Material Design file manager, for Android 5.0+.",
             "abi": "arm64-v8a"
         },
-        "FDroid": {
+        "FDroid Gen 1": {
             "url": "https://f-droid.org/F-Droid.apk",
             "package_name": "F-Droid.apk",
             "description": "Open source app store for Gen 1 - Latest stable version",
