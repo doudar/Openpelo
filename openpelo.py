@@ -75,6 +75,11 @@ class OpenPeloGUI:
         self.install_thread = None
         self.recording_process = None
         self.is_recording = False
+        # Heartbeat / connection tracking
+        self.HEARTBEAT_INTERVAL_MS = 5000  # 5s heartbeat
+        self._heartbeat_running = False
+        self._last_connection_state = None  # True/False
+        self._last_device_abi = None
 
         # Ensure the window stays on top on launch (Windows console can steal focus)
         self.root.after(100, self._bring_to_front)
@@ -127,7 +132,7 @@ class OpenPeloGUI:
         )
         self.status_label.grid(row=0, column=0, sticky='w')
 
-                # USB Debug Guide button
+    # USB Debug Guide button
         self.debug_btn = tk.Button(
             self.root,
             text="Developer Mode Guide",
@@ -349,9 +354,48 @@ class OpenPeloGUI:
                 text=True,
                 **self._subprocess_kwargs()
             )
-            return len(result.stdout.strip().split('\n')) > 1
+            lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip()]
+            # First line is header. Any additional line ending with 'device' counts.
+            device_lines = [l for l in lines[1:] if l.endswith('\tdevice') or l.endswith(' device')]
+            return len(device_lines) > 0
         except Exception:
             return False
+
+    def _schedule_heartbeat(self):
+        if not self._heartbeat_running:
+            return
+        # Schedule next tick
+        self.root.after(self.HEARTBEAT_INTERVAL_MS, self._heartbeat_tick)
+
+    def _heartbeat_tick(self):
+        """Periodic lightweight device status check; only triggers full refresh on state change."""
+        try:
+            # Avoid overlapping with an active check or install thread
+            busy = (self.check_adb_thread and self.check_adb_thread.is_alive()) or \
+                   (self.install_thread and self.install_thread.is_alive())
+            if not busy:
+                # Perform a minimal connection check
+                connected_now = self.is_device_connected()
+                if connected_now != self._last_connection_state:
+                    # State changed: run full refresh
+                    self.check_device_connection()
+                elif connected_now:
+                    # Still connected; ensure status label hasn't been overwritten incorrectly
+                    if self._last_device_abi:
+                        self.status_label.config(text=f"✅ Device connected ({self._last_device_abi})")
+                else:
+                    # Still disconnected; keep message consistent
+                    self.status_label.config(
+                        text="❌ No device detected. Please connect your device and enable USB debugging."
+                    )
+        finally:
+            self._schedule_heartbeat()
+
+    def start_heartbeat(self):
+        if not self._heartbeat_running:
+            self._heartbeat_running = True
+            # Quick first tick
+            self.root.after(1500, self._heartbeat_tick)
 
     def choose_save_location(self):
         """Open directory chooser dialog"""
@@ -466,62 +510,61 @@ class OpenPeloGUI:
                     )
                     return
             
-            if self.is_device_connected():
-                # Get device ABI and update status
-                device_abi = self.get_device_abi()
+            connected = self.is_device_connected()
+            if connected:
+                device_abi = self.get_device_abi() or ''
                 abi_text = f" ({device_abi})" if device_abi else ""
                 self.status_label.config(text=f"✅ Device connected{abi_text}")
-                
-                # Reload apps based on ABI
-                self.available_apps = self.load_config()
-                
-                # Clear existing checkboxes
-                for widget in self.apps_frame.winfo_children():
-                    widget.destroy()
-                
-                # Recreate app checkboxes with filtered list
-                self.app_vars = {}
-                for i, (app_name, app_info) in enumerate(self.available_apps.items()):
-                    var = tk.BooleanVar()
-                    self.app_vars[app_name] = var
-                    
-                    ttk.Checkbutton(
-                        self.apps_frame,
-                        text=app_name,
-                        variable=var
-                    ).grid(row=i, column=0, sticky='w')
-                    
-                    ttk.Label(
-                        self.apps_frame,
-                        text=app_info.get('description', ''),
-                        style='Status.TLabel'
-                    ).grid(row=i, column=1, sticky='w', padx=10)
-                
+                # Only reload apps if state changed from disconnected->connected or ABI changed
+                if (self._last_connection_state is not True) or (device_abi and device_abi != self._last_device_abi):
+                    self.available_apps = self.load_config()
+                    for widget in self.apps_frame.winfo_children():
+                        widget.destroy()
+                    self.app_vars = {}
+                    for i, (app_name, app_info) in enumerate(self.available_apps.items()):
+                        var = tk.BooleanVar()
+                        self.app_vars[app_name] = var
+                        ttk.Checkbutton(
+                            self.apps_frame,
+                            text=app_name,
+                            variable=var
+                        ).grid(row=i, column=0, sticky='w')
+                        ttk.Label(
+                            self.apps_frame,
+                            text=app_info.get('description', ''),
+                            style='Status.TLabel'
+                        ).grid(row=i, column=1, sticky='w', padx=10)
+                # Enable buttons (idempotent)
                 self.install_btn.config(state='normal')
                 self.install_local_btn.config(state='normal')
                 self.screenshot_btn.config(state='normal')
                 self.record_btn.config(state='normal')
+                # Update last known values
+                self._last_device_abi = device_abi or self._last_device_abi
             else:
-                self.status_label.config(
-                    text="❌ No device detected. Please connect your device and enable USB debugging."
-                )
-                self.install_btn.config(state='disabled')
-                self.install_local_btn.config(state='disabled')
-                self.screenshot_btn.config(state='disabled')
-                self.record_btn.config(state='disabled')
-                
-                # Clear app checkboxes when no device is connected
-                for widget in self.apps_frame.winfo_children():
-                    widget.destroy()
-                
-                # Add informative text when no apps are shown
-                ttk.Label(
-                    self.apps_frame,
-                    text="Compatible applications will be displayed here once your Peloton device is detected.",
-                    style='Status.TLabel',
-                    wraplength=400,
-                    justify='center'
-                ).grid(row=0, column=0, columnspan=2, pady=20)
+                if self._last_connection_state is not False:  # Only rebuild apps list once on disconnect
+                    self.status_label.config(
+                        text="❌ No device detected. Please connect your device and enable USB debugging."
+                    )
+                    self.install_btn.config(state='disabled')
+                    self.install_local_btn.config(state='disabled')
+                    self.screenshot_btn.config(state='disabled')
+                    self.record_btn.config(state='disabled')
+                    for widget in self.apps_frame.winfo_children():
+                        widget.destroy()
+                    ttk.Label(
+                        self.apps_frame,
+                        text="Compatible applications will be displayed here once your Peloton device is detected.",
+                        style='Status.TLabel',
+                        wraplength=400,
+                        justify='center'
+                    ).grid(row=0, column=0, columnspan=2, pady=20)
+                else:
+                    # Keep status message current if something else overwrote it
+                    self.status_label.config(
+                        text="❌ No device detected. Please connect your device and enable USB debugging."
+                    )
+            self._last_connection_state = connected
             
             self.progress.stop()
             self.refresh_btn.config(state='normal')
@@ -722,21 +765,24 @@ class OpenPeloGUI:
 
     def show_wifi_guide(self):
         """Show the wireless ADB guide window"""
-        guide = WirelessAdbGuide(self.root, self.adb_path, self._subprocess_kwargs())
+        guide = WirelessAdbGuide(self.root, self.adb_path, self._subprocess_kwargs(), app=self)
         guide.show()
 
     def run(self):
         """Start the GUI application"""
         # Initial device check
         self.check_device_connection()
+        # Start heartbeat after initial check
+        self.start_heartbeat()
         # Start main loop
         self.root.mainloop()
 
 class WirelessAdbGuide:
-    def __init__(self, parent, adb_path, subprocess_kwargs):
+    def __init__(self, parent, adb_path, subprocess_kwargs, app=None):
         self.parent = parent
         self.adb_path = adb_path
         self.subprocess_kwargs = subprocess_kwargs
+        self.app = app  # Reference to main application for triggering refresh
         self.window = tk.Toplevel(parent)
         self.window.title("Wireless ADB Setup Guide")
         self.window.geometry("500x350")
@@ -836,7 +882,7 @@ class WirelessAdbGuide:
         else:
             # Open pairing dialog
             self.window.destroy()
-            pairing_dialog = WirelessPairingDialog(self.parent, self.adb_path, self.subprocess_kwargs)
+            pairing_dialog = WirelessPairingDialog(self.parent, self.adb_path, self.subprocess_kwargs, app=self.app)
             pairing_dialog.show()
     
     def prev_step(self):
@@ -850,10 +896,11 @@ class WirelessAdbGuide:
         self.window.focus_set()
 
 class WirelessPairingDialog:
-    def __init__(self, parent, adb_path, subprocess_kwargs):
+    def __init__(self, parent, adb_path, subprocess_kwargs, app=None):
         self.parent = parent
         self.adb_path = adb_path
         self.subprocess_kwargs = subprocess_kwargs
+        self.app = app  # Main app reference for immediate UI update
         self.window = tk.Toplevel(parent)
         self.window.title("Wireless Pairing")
         self.window.geometry("400x400")
@@ -1017,6 +1064,9 @@ class WirelessPairingDialog:
                         "Success",
                         f"Successfully connected to device via WiFi!\n\nYou can now use OpenPelo wirelessly."
                     )
+                    # Trigger immediate main window refresh
+                    if self.app:
+                        self.app.check_device_connection()
                     self.window.destroy()
                     return
                 
@@ -1051,6 +1101,8 @@ class WirelessPairingDialog:
                     "Success",
                     f"Successfully connected to device via WiFi!\n\nYou can now use OpenPelo wirelessly."
                 )
+                if self.app:
+                    self.app.check_device_connection()
                 self.window.destroy()
                 
             except subprocess.TimeoutExpired:
