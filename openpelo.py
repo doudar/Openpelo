@@ -4,6 +4,7 @@ import platform
 import urllib.request
 from urllib.parse import urlparse
 import zipfile
+import shlex
 import subprocess
 import certifi
 import ssl
@@ -47,6 +48,8 @@ class OpenPeloGUI:
         if not os.path.exists(self.save_location):
             os.makedirs(self.save_location)
         
+        self._pending_log_messages = []
+
         # Load available apps
         if getattr(sys, 'frozen', False):
             # If running from PyInstaller bundle
@@ -71,6 +74,9 @@ class OpenPeloGUI:
         self.style.configure('Section.TLabelframe', padding=10)
         
         self.setup_gui()
+        self._device_name_cache = {}
+        self._last_device_info = None
+        self._last_device_count = 0
         self.check_adb_thread = None
         self.install_thread = None
         self.recording_process = None
@@ -110,6 +116,7 @@ class OpenPeloGUI:
     def setup_gui(self):
         # Configure grid
         self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(3, weight=1)
         
         # Header (row 0)
         header = ttk.Label(
@@ -167,9 +174,32 @@ class OpenPeloGUI:
         )
         self.progress.grid(row=2, column=0, columnspan=2, pady=10, padx=20)
 
+        # ADB log frame (row 3)
+        self.adb_log_frame = ttk.LabelFrame(self.root, text="ADB Messages", style='Section.TLabelframe')
+        self.adb_log_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=20, pady=5)
+        self.adb_log_frame.grid_columnconfigure(0, weight=1)
+        self.adb_log_frame.grid_rowconfigure(0, weight=1)
+
+        self.adb_log = tk.Text(self.adb_log_frame, height=8, wrap='word', state='disabled')
+        self.adb_log.configure(font=('TkFixedFont', 9))
+        self.adb_log.grid(row=0, column=0, sticky='nsew')
+
+        self.adb_scrollbar = ttk.Scrollbar(self.adb_log_frame, orient='vertical', command=self.adb_log.yview)
+        self.adb_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.adb_log.config(yscrollcommand=self.adb_scrollbar.set)
+
+        self.adb_log.tag_configure('command', foreground='#0b6fa4')
+        self.adb_log.tag_configure('stdout', foreground='#1f1f1f')
+        self.adb_log.tag_configure('stderr', foreground='#b00020')
+        self.adb_log.tag_configure('error', foreground='#b00020', font=('Helvetica', 9, 'bold'))
+        self.adb_log.tag_configure('status', foreground='#2c7a7b')
+        self.adb_log.tag_configure('info', foreground='#444444')
+
+        self._flush_pending_logs()
+
         # Apps frame (row 4)
         self.apps_frame = ttk.LabelFrame(self.root, text="Available Apps", style='Section.TLabelframe')
-        self.apps_frame.grid(row=3, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
+        self.apps_frame.grid(row=4, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
         self.apps_frame.grid_columnconfigure(0, weight=1)
 
         # App checkboxes
@@ -190,9 +220,9 @@ class OpenPeloGUI:
                 style='Status.TLabel'
             ).grid(row=i, column=1, sticky='w', padx=10)
 
-        # Buttons frame (row 4)
+        # Buttons frame (row 5)
         buttons_frame = ttk.Frame(self.root)
-        buttons_frame.grid(row=4, column=0, columnspan=2, sticky='ew', padx=20, pady=0)
+        buttons_frame.grid(row=5, column=0, columnspan=2, sticky='ew', padx=20, pady=0)
         buttons_frame.grid_columnconfigure(1, weight=1)  # Space between buttons
         
         # Install button
@@ -217,9 +247,9 @@ class OpenPeloGUI:
         )
         self.install_local_btn.grid(row=1, column=3, padx=5)
 
-         # Media Controls Frame (row 5)
+         # Media Controls Frame (row 6)
         media_frame = ttk.LabelFrame(self.root, text="Screen Recording Utility", style='Section.TLabelframe')
-        media_frame.grid(row=5, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
+        media_frame.grid(row=6, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
         media_frame.grid_columnconfigure(1, weight=1)
 
         # Save location
@@ -254,8 +284,196 @@ class OpenPeloGUI:
         )
         self.record_btn.pack(side='left', padx=5)
 
-    def load_config(self):
-        """Load available apps from config file, filtered by device ABI"""
+    def _format_command(self, parts):
+        string_parts = [str(part) for part in parts]
+        try:
+            return shlex.join(string_parts)
+        except AttributeError:
+            formatted = []
+            for part in string_parts:
+                if ' ' in part or '\t' in part:
+                    formatted.append(f'"{part}"')
+                else:
+                    formatted.append(part)
+            return ' '.join(formatted)
+
+    def log_adb_message(self, message: Optional[str], tag: str = 'info'):
+        if message is None:
+            return
+        text = str(message)
+        if not text:
+            return
+        timestamp = datetime.now().strftime("[%H:%M:%S] ")
+        lines = text.splitlines() or ['']
+
+        if not hasattr(self, 'adb_log') or not hasattr(self, 'root'):
+            self._pending_log_messages.append((timestamp, lines, tag))
+            return
+
+        def append_lines():
+            self._write_log_lines(timestamp, lines, tag)
+
+        try:
+            self.root.after(0, append_lines)
+        except Exception:
+            self._pending_log_messages.append((timestamp, lines, tag))
+
+    def _write_log_lines(self, timestamp: str, lines, tag: str):
+        if not hasattr(self, 'adb_log'):
+            self._pending_log_messages.append((timestamp, lines, tag))
+            return
+        try:
+            self.adb_log.configure(state='normal')
+            for idx, line in enumerate(lines):
+                prefix = timestamp if idx == 0 else ' ' * len(timestamp)
+                self.adb_log.insert('end', f"{prefix}{line}\n", (tag,))
+            self.adb_log.configure(state='disabled')
+            self.adb_log.see('end')
+        except tk.TclError:
+            self._pending_log_messages.append((timestamp, lines, tag))
+
+    def _flush_pending_logs(self):
+        if not getattr(self, '_pending_log_messages', None):
+            return
+        pending = list(self._pending_log_messages)
+        self._pending_log_messages.clear()
+        for timestamp, lines, tag in pending:
+            self._write_log_lines(timestamp, lines, tag)
+
+    def adb_run(self, *adb_args, log_to_panel: bool = True, **kwargs):
+        command = [str(self.adb_path), *[str(arg) for arg in adb_args]]
+        run_kwargs = self._subprocess_kwargs().copy()
+        run_kwargs.update(kwargs)
+
+        if 'text' not in run_kwargs and (
+            run_kwargs.get('capture_output') or ('stdout' not in run_kwargs and 'stderr' not in run_kwargs)
+        ):
+            run_kwargs.setdefault('text', True)
+
+        if 'capture_output' not in run_kwargs and 'stdout' not in run_kwargs and 'stderr' not in run_kwargs:
+            run_kwargs['capture_output'] = True
+
+        capture_output = run_kwargs.get('capture_output', False)
+
+        if log_to_panel:
+            self.log_adb_message(f"$ {self._format_command(command)}", tag='command')
+
+        try:
+            result = subprocess.run(command, **run_kwargs)
+        except subprocess.CalledProcessError as exc:
+            if log_to_panel:
+                if exc.stdout:
+                    self.log_adb_message(exc.stdout.rstrip(), tag='stdout')
+                if exc.stderr:
+                    self.log_adb_message(exc.stderr.rstrip(), tag='stderr')
+                self.log_adb_message(f"Command failed with exit code {exc.returncode}", tag='error')
+            raise
+        except Exception as exc:
+            if log_to_panel:
+                self.log_adb_message(f"Command error: {exc}", tag='error')
+            raise
+
+        if log_to_panel and capture_output:
+            if result.stdout:
+                self.log_adb_message(result.stdout.rstrip(), tag='stdout')
+            if result.stderr:
+                self.log_adb_message(result.stderr.rstrip(), tag='stderr')
+
+        return result
+
+    def _adb_shell_getprop(self, prop: str, serial: Optional[str] = None) -> str:
+        args = []
+        if serial:
+            args.extend(['-s', serial])
+        args.extend(['shell', 'getprop', prop])
+        try:
+            result = self.adb_run(*args, log_to_panel=False, timeout=5)
+            return (result.stdout or '').strip()
+        except Exception:
+            return ''
+
+    def get_device_name(self, serial: Optional[str]) -> str:
+        if not serial:
+            return ''
+        if serial in self._device_name_cache:
+            return self._device_name_cache[serial]
+
+        manufacturer = self._adb_shell_getprop('ro.product.manufacturer', serial)
+        model = self._adb_shell_getprop('ro.product.model', serial)
+
+        name_parts = []
+        if manufacturer:
+            name_parts.append(manufacturer.strip().title())
+        if model:
+            name_parts.append(model.strip())
+
+        friendly_name = ' '.join(name_parts).strip() or serial
+        self._device_name_cache[serial] = friendly_name
+        return friendly_name
+
+    def get_connected_devices(self, log: bool = False):
+        try:
+            result = self.adb_run('devices', log_to_panel=log, timeout=5)
+        except Exception:
+            return []
+
+        output = (result.stdout or '').splitlines()
+        lines = [line.strip() for line in output if line.strip()]
+        if len(lines) <= 1:
+            return []
+
+        devices = []
+        for raw in lines[1:]:
+            if '\t' in raw:
+                serial, status = raw.split('\t', 1)
+            else:
+                parts = raw.split()
+                if len(parts) < 2:
+                    continue
+                serial, status = parts[0], parts[-1]
+            serial = serial.strip()
+            status = status.strip()
+            if status != 'device':
+                continue
+
+            transport = 'wifi' if ':' in serial else 'usb'
+            ip, port = None, None
+            if transport == 'wifi':
+                host, _, host_port = serial.partition(':')
+                ip = host
+                port = host_port or None
+
+            devices.append({
+                'serial': serial,
+                'transport': transport,
+                'ip': ip,
+                'port': port,
+                'name': self.get_device_name(serial)
+            })
+
+        return devices
+
+    def _build_connection_status(self, device_info: Optional[dict], abi: Optional[str] = None) -> str:
+        if not device_info:
+            base = "✅ Connected"
+        else:
+            name = device_info.get('name') or device_info.get('serial') or 'device'
+            transport = device_info.get('transport')
+            if transport == 'wifi' and device_info.get('ip'):
+                address = device_info['ip']
+                if device_info.get('port'):
+                    address = f"{address}:{device_info['port']}"
+                base = f"✅ Connected to {name} on {address}"
+            else:
+                base = f"✅ Connected to {name}"
+
+        if abi:
+            base = f"{base} ({abi})"
+
+        return base
+
+    def load_config(self, device_abi: Optional[str] = None):
+        """Load available apps from config file, filtered by device ABI."""
         try:
             if not self.config_path.exists():
                 error_msg = f"Config file not found at: {self.config_path}"
@@ -268,7 +486,8 @@ class OpenPeloGUI:
                 all_apps = config.get('apps', {})
 
             # Get device ABI
-            device_abi = self.get_device_abi()
+            if device_abi is None:
+                device_abi = self.get_device_abi()
             
             # Filter apps based on ABI
             if device_abi == "armeabi-v7a":
@@ -332,34 +551,21 @@ class OpenPeloGUI:
             messagebox.showerror("Error", f"Error setting up ADB: {e}")
             return False
 
-    def get_device_abi(self):
-        """Get the device's CPU ABI"""
+    def get_device_abi(self, serial: Optional[str] = None) -> Optional[str]:
+        """Get the device's CPU ABI."""
+        args = []
+        if serial:
+            args.extend(['-s', serial])
+        args.extend(['shell', 'getprop', 'ro.product.cpu.abi'])
         try:
-            result = subprocess.run(
-                [str(self.adb_path), 'shell', 'getprop', 'ro.product.cpu.abi'],
-                capture_output=True,
-                text=True,
-                **self._subprocess_kwargs()
-            )
-            return result.stdout.strip()
+            result = self.adb_run(*args, log_to_panel=False, timeout=5)
+            return (result.stdout or '').strip()
         except Exception:
             return None
 
-    def is_device_connected(self):
-        """Check if device is connected via ADB"""
-        try:
-            result = subprocess.run(
-                [str(self.adb_path), 'devices'],
-                capture_output=True,
-                text=True,
-                **self._subprocess_kwargs()
-            )
-            lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip()]
-            # First line is header. Any additional line ending with 'device' counts.
-            device_lines = [l for l in lines[1:] if l.endswith('\tdevice') or l.endswith(' device')]
-            return len(device_lines) > 0
-        except Exception:
-            return False
+    def is_device_connected(self) -> bool:
+        """Check if at least one device is connected via ADB."""
+        return bool(self.get_connected_devices())
 
     def _schedule_heartbeat(self):
         if not self._heartbeat_running:
@@ -374,20 +580,23 @@ class OpenPeloGUI:
             busy = (self.check_adb_thread and self.check_adb_thread.is_alive()) or \
                    (self.install_thread and self.install_thread.is_alive())
             if not busy:
-                # Perform a minimal connection check
-                connected_now = self.is_device_connected()
+                devices = self.get_connected_devices()
+                connected_now = bool(devices)
                 if connected_now != self._last_connection_state:
                     # State changed: run full refresh
                     self.check_device_connection()
                 elif connected_now:
-                    # Still connected; ensure status label hasn't been overwritten incorrectly
-                    if self._last_device_abi:
-                        self.status_label.config(text=f"✅ Device connected ({self._last_device_abi})")
+                    primary = next((d for d in devices if d['transport'] == 'wifi'), devices[0])
+                    self._last_device_info = primary
+                    status_text = self._build_connection_status(primary, self._last_device_abi)
+                    self.status_label.config(text=status_text)
+                    self._last_device_count = len(devices)
                 else:
                     # Still disconnected; keep message consistent
                     self.status_label.config(
                         text="❌ No device detected. Please connect your device and enable USB debugging."
                     )
+                    self._last_device_count = 0
         finally:
             self._schedule_heartbeat()
 
@@ -415,27 +624,16 @@ class OpenPeloGUI:
             save_path = os.path.join(self.save_location, filename)
             
             # Take screenshot
-            subprocess.run(
-                [str(self.adb_path), 'shell', 'screencap', '-p', '/sdcard/screenshot.png'],
-                check=True,
-                **self._subprocess_kwargs()
-            )
-            
+            self.adb_run('shell', 'screencap', '-p', '/sdcard/screenshot.png', check=True)
+
             # Pull screenshot from device
-            subprocess.run(
-                [str(self.adb_path), 'pull', '/sdcard/screenshot.png', save_path],
-                check=True,
-                **self._subprocess_kwargs()
-            )
-            
+            self.adb_run('pull', '/sdcard/screenshot.png', save_path, check=True)
+
             # Clean up device
-            subprocess.run(
-                [str(self.adb_path), 'shell', 'rm', '/sdcard/screenshot.png'],
-                check=True,
-                **self._subprocess_kwargs()
-            )
+            self.adb_run('shell', 'rm', '/sdcard/screenshot.png', check=True)
             
             messagebox.showinfo("Success", f"Screenshot saved to:\n{save_path}")
+            self.log_adb_message(f"Screenshot saved to {save_path}", tag='status')
         except subprocess.CalledProcessError as e:
             messagebox.showerror("Error", f"Failed to take screenshot: {e}")
 
@@ -448,8 +646,11 @@ class OpenPeloGUI:
                 device_path = f"/sdcard/{self.current_recording}"
                 
                 # Start recording
+                record_cmd = [str(self.adb_path), 'shell', 'screenrecord', device_path]
+                self.log_adb_message(f"$ {self._format_command(record_cmd)}", tag='command')
+                self.log_adb_message(f"Recording started: {device_path}", tag='info')
                 self.recording_process = subprocess.Popen(
-                    [str(self.adb_path), 'shell', 'screenrecord', device_path],
+                    record_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     **self._subprocess_kwargs()
@@ -467,30 +668,24 @@ class OpenPeloGUI:
                 if self.recording_process:
                     self.recording_process.terminate()
                     self.recording_process.wait(timeout=5)
+                    self.log_adb_message("Screen recording stopped", tag='info')
                 
                 # Wait for the file to be written
                 self.root.after(1000)
                 
                 # Pull recording from device
                 save_path = os.path.join(self.save_location, self.current_recording)
-                subprocess.run(
-                    [str(self.adb_path), 'pull', f'/sdcard/{self.current_recording}', save_path],
-                    check=True,
-                    **self._subprocess_kwargs()
-                )
+                self.adb_run('pull', f'/sdcard/{self.current_recording}', save_path, check=True)
                 
                 # Clean up device
-                subprocess.run(
-                    [str(self.adb_path), 'shell', 'rm', f'/sdcard/{self.current_recording}'],
-                    check=True,
-                    **self._subprocess_kwargs()
-                )
+                self.adb_run('shell', 'rm', f'/sdcard/{self.current_recording}', check=True)
                 
                 self.is_recording = False
                 self.record_btn.config(text="🔴 Start Recording")
                 self.screenshot_btn.config(state='normal')
                 
                 messagebox.showinfo("Success", f"Recording saved to:\n{save_path}")
+                self.log_adb_message(f"Recording saved to {save_path}", tag='status')
                 
             except subprocess.CalledProcessError as e:
                 messagebox.showerror("Error", f"Failed to save recording: {e}")
@@ -510,14 +705,37 @@ class OpenPeloGUI:
                     )
                     return
             
-            connected = self.is_device_connected()
+            devices = self.get_connected_devices(log=True)
+            previous_count = self._last_device_count
+            connected = bool(devices)
             if connected:
-                device_abi = self.get_device_abi() or ''
-                abi_text = f" ({device_abi})" if device_abi else ""
-                self.status_label.config(text=f"✅ Device connected{abi_text}")
-                # Only reload apps if state changed from disconnected->connected or ABI changed
-                if (self._last_connection_state is not True) or (device_abi and device_abi != self._last_device_abi):
-                    self.available_apps = self.load_config()
+                primary_device = next((d for d in devices if d['transport'] == 'wifi'), devices[0])
+                previous_info = self._last_device_info or {}
+                previous_serial = previous_info.get('serial')
+                previous_ip = previous_info.get('ip')
+                previous_transport = previous_info.get('transport')
+                previous_abi = self._last_device_abi
+
+                device_abi = self.get_device_abi(primary_device['serial']) or ''
+                resolved_abi = device_abi or previous_abi
+                status_text = self._build_connection_status(primary_device, resolved_abi)
+                self.status_label.config(text=status_text)
+
+                if len(devices) > 1 and len(devices) != previous_count:
+                    self.log_adb_message(
+                        f"Multiple devices detected. Prioritizing {primary_device['serial']} ({primary_device['transport']}).",
+                        tag='info'
+                    )
+
+                should_reload_apps = (
+                    self._last_connection_state is not True or
+                    primary_device['serial'] != previous_serial or
+                    primary_device.get('transport') != previous_transport or
+                    (device_abi and device_abi != previous_abi)
+                )
+
+                if should_reload_apps:
+                    self.available_apps = self.load_config(resolved_abi)
                     for widget in self.apps_frame.winfo_children():
                         widget.destroy()
                     self.app_vars = {}
@@ -534,13 +752,24 @@ class OpenPeloGUI:
                             text=app_info.get('description', ''),
                             style='Status.TLabel'
                         ).grid(row=i, column=1, sticky='w', padx=10)
+
                 # Enable buttons (idempotent)
                 self.install_btn.config(state='normal')
                 self.install_local_btn.config(state='normal')
                 self.screenshot_btn.config(state='normal')
                 self.record_btn.config(state='normal')
-                # Update last known values
-                self._last_device_abi = device_abi or self._last_device_abi
+
+                if (
+                    self._last_connection_state is not True
+                    or primary_device['serial'] != previous_serial
+                    or primary_device.get('ip') != previous_ip
+                    or primary_device.get('transport') != previous_transport
+                ):
+                    self.log_adb_message(status_text, tag='status')
+
+                self._last_device_info = primary_device
+                self._last_device_abi = resolved_abi or None
+                self._last_device_count = len(devices)
             else:
                 if self._last_connection_state is not False:  # Only rebuild apps list once on disconnect
                     self.status_label.config(
@@ -559,11 +788,15 @@ class OpenPeloGUI:
                         wraplength=400,
                         justify='center'
                     ).grid(row=0, column=0, columnspan=2, pady=20)
+                    self.log_adb_message("ADB connection lost.", tag='status')
                 else:
                     # Keep status message current if something else overwrote it
                     self.status_label.config(
                         text="❌ No device detected. Please connect your device and enable USB debugging."
                     )
+                self._last_device_info = None
+                self._last_device_abi = None
+                self._last_device_count = 0
             self._last_connection_state = connected
             
             self.progress.stop()
@@ -605,12 +838,7 @@ class OpenPeloGUI:
 
                     # Install APK
                     self.status_label.config(text=f"Installing {app_name}...")
-                    result = subprocess.run(
-                        [str(self.adb_path), 'install', '-r', str(apk_path)],
-                        capture_output=True,
-                        text=True,
-                        **self._subprocess_kwargs()
-                    )
+                    result = self.adb_run('install', '-r', str(apk_path))
 
                     # Clean up APK file
                     apk_path.unlink()
@@ -620,6 +848,8 @@ class OpenPeloGUI:
                             "Installation Error",
                             f"Error installing {app_name}: {result.stdout}"
                         )
+                    else:
+                        self.log_adb_message(f"{app_name} installed successfully.", tag='status')
                 except Exception as e:
                     messagebox.showerror(
                         "Error",
@@ -726,16 +956,12 @@ class OpenPeloGUI:
             
             try:
                 self.status_label.config(text="Installing APK...")
-                result = subprocess.run(
-                    [str(self.adb_path), 'install', '-r', apk_path],
-                    capture_output=True,
-                    text=True,
-                    **self._subprocess_kwargs()
-                )
+                result = self.adb_run('install', '-r', apk_path)
                 
                 if 'Success' in result.stdout:
                     messagebox.showinfo("Success", "APK installed successfully!")
                     self.status_label.config(text="APK installation complete!")
+                    self.log_adb_message(f"Installed {Path(apk_path).name} successfully.", tag='status')
                 else:
                     messagebox.showerror(
                         "Installation Error",
@@ -1017,17 +1243,22 @@ class WirelessPairingDialog:
         
         def connect():
             try:
+                if self.app:
+                    def run_adb(*args, **kwargs):
+                        return self.app.adb_run(*args, **kwargs)
+                else:
+                    def run_adb(*args, **kwargs):
+                        params = (self.subprocess_kwargs or {}).copy()
+                        params.setdefault('capture_output', True)
+                        params.setdefault('text', True)
+                        params.update(kwargs)
+                        return subprocess.run([str(self.adb_path), *args], **params)
+
                 # Step 1: Pair with the device
                 self.status_label.config(text="Pairing with device...")
                 self.window.update()
                 
-                pair_result = subprocess.run(
-                    [str(self.adb_path), 'pair', f'{ip}:{port}', code],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    **self.subprocess_kwargs
-                )
+                pair_result = run_adb('pair', f'{ip}:{port}', code, timeout=30)
                 
                 if pair_result.returncode != 0 or 'Failed' in pair_result.stdout or 'failed' in pair_result.stderr:
                     error_msg = pair_result.stdout + pair_result.stderr
@@ -1048,13 +1279,7 @@ class WirelessPairingDialog:
                 
                 # Try to find the device's connection port by checking adb devices
                 # After pairing, the device should show up
-                devices_result = subprocess.run(
-                    [str(self.adb_path), 'devices'],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    **self.subprocess_kwargs
-                )
+                devices_result = run_adb('devices', timeout=10)
                 
                 # Check if device is already connected after pairing
                 if 'device' in devices_result.stdout and ip in devices_result.stdout:
@@ -1073,13 +1298,7 @@ class WirelessPairingDialog:
                 # Try common wireless debugging ports
                 connected = False
                 
-                connect_result = subprocess.run(
-                    [str(self.adb_path), 'connect', f'{ip}:{conport}'],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    **self.subprocess_kwargs
-                    )
+                connect_result = run_adb('connect', f'{ip}:{conport}', timeout=10)
                         
                 if connect_result.returncode == 0 and 'connected' in connect_result.stdout.lower():
                     connected = True
