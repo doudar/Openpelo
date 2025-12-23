@@ -65,11 +65,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-
-    - name: Install Tk system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-tk tk-dev
     
     - name: Install dependencies
       run: |
@@ -79,7 +74,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka `
-          --standalone `
           --onefile `
           --mode=app `
           --enable-plugin=tk-inter `
@@ -129,7 +123,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka \
-          --standalone \
           --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
@@ -174,7 +167,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka \
-          --standalone \
           --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
@@ -229,7 +221,6 @@ jobs:
     - name: Build executable
       run: |
         arch -x86_64 python -m nuitka \
-          --standalone \
           --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
