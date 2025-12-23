@@ -74,7 +74,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka `
-          --onefile `
           --mode=app `
           --enable-plugin=tk-inter `
           --include-package=certifi `
@@ -123,7 +122,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka \
-          --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
@@ -167,7 +165,6 @@ jobs:
     - name: Build executable
       run: |
         python -m nuitka \
-          --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
@@ -221,7 +218,6 @@ jobs:
     - name: Build executable
       run: |
         arch -x86_64 python -m nuitka \
-          --onefile \
           --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
