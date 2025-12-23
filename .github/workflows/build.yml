@@ -20,6 +20,8 @@ jobs:
       
       - name: Set up Python
         uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       
       - name: Bump version and push tag
         run: |
@@ -61,6 +63,13 @@ jobs:
     
     - name: Set up Python
       uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Tk system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk tk-dev
     
     - name: Install dependencies
       run: |
@@ -69,21 +78,21 @@ jobs:
     
     - name: Build executable
       run: |
-        python -m nuitka ^
-          --standalone ^
-          --onefile ^
-          --enable-plugin=tk-inter ^
-          --include-package=certifi ^
-          --include-data-file=apps_config.json=apps_config.json ^
-          --include-data-file=usb_debug_steps.json=usb_debug_steps.json ^
-          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json ^
-          --include-data-dir=ADB=ADB ^
-          --include-data-dir=platform-tools=platform-tools ^
-          --windows-disable-console ^
-          --windows-icon-from-ico=Icon.ico ^
-          --output-filename=OpenPelo.exe ^
-          --output-dir=build/windows ^
-          --remove-output ^
+        python -m nuitka `
+          --standalone `
+          --onefile `
+          --enable-plugin=tk-inter `
+          --include-package=certifi `
+          --include-data-file=apps_config.json=apps_config.json `
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json `
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json `
+          --include-data-dir=ADB=ADB `
+          --include-data-dir=platform-tools=platform-tools `
+          --windows-disable-console `
+          --windows-icon-from-ico=Icon.ico `
+          --output-filename=OpenPelo.exe `
+          --output-dir=build/windows `
+          --remove-output `
           openpelo.py
         New-Item -ItemType Directory -Path dist -Force | Out-Null
         Copy-Item build/windows/OpenPelo.exe dist/OpenPelo.exe
@@ -103,6 +112,8 @@ jobs:
     
     - name: Set up Python
       uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     
     - name: Install dependencies
       run: |
@@ -145,6 +156,8 @@ jobs:
     
     - name: Set up Python
       uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     
     - name: Install dependencies
       run: |
@@ -193,15 +206,22 @@ jobs:
     
     - name: Set up Python
       uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        architecture: 'x64'
+
+    - name: Install Rosetta
+      run: |
+        sudo softwareupdate --install-rosetta --agree-to-license
     
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install nuitka zstandard certifi pillow
+        arch -x86_64 python -m pip install --upgrade pip
+        arch -x86_64 python -m pip install nuitka zstandard certifi pillow
     
     - name: Build executable
       run: |
-        python -m nuitka \
+        arch -x86_64 python -m nuitka \
           --standalone \
           --onefile \
           --enable-plugin=tk-inter \
@@ -232,8 +252,41 @@ jobs:
         name: OpenPelo-macOS-Intel
         path: dist/OpenPelo-macOS-Intel.zip
 
+  build-macos-universal:
+    needs: [build-macos-arm, build-macos-intel]
+    runs-on: macos-latest
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+    - name: Download ARM artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: OpenPelo-macOS-ARM
+        path: arm
+
+    - name: Download Intel artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: OpenPelo-macOS-Intel
+        path: intel
+
+    - name: Create universal binary
+      run: |
+        unzip arm/OpenPelo-macOS-ARM.zip -d arm_extracted
+        unzip intel/OpenPelo-macOS-Intel.zip -d intel_extracted
+        mkdir -p dist
+        lipo -create arm_extracted/OpenPelo intel_extracted/OpenPelo -output dist/OpenPelo
+        cd dist
+        zip OpenPelo-macOS-universal.zip OpenPelo
+        cd ..
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenPelo-macOS-universal
+        path: dist/OpenPelo-macOS-universal.zip
+
   create-release:
-    needs: [build-windows, build-linux, build-macos-arm, build-macos-intel]
+    needs: [build-windows, build-linux, build-macos-arm, build-macos-intel, build-macos-universal]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
@@ -259,3 +312,4 @@ jobs:
           OpenPelo-Linux/OpenPelo-linux.tar.gz
           OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.zip
           OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.zip
+          OpenPelo-macOS-universal/OpenPelo-macOS-universal.zip
