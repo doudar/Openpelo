@@ -186,7 +186,7 @@ jobs:
 
   build-macos-intel:
     needs: [bump-version]
-    runs-on: macos-13
+    runs-on: macos-latest
     if: github.event_name == 'push' || github.event_name == 'release'
     steps:
     - uses: actions/checkout@v3
