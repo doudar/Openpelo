@@ -65,7 +65,8 @@ class OpenPeloGUI:
         self.root = tk.Tk()
         self.root.title("OpenPelo")
         self.root.geometry("1000x700")  # Increased height for new section
-        self.root.resizable(False, False)
+        self.root.minsize(1000, 700)
+        self.root.resizable(True, True)
         
         # Style
         self.style = ttk.Style()
@@ -116,7 +117,8 @@ class OpenPeloGUI:
     def setup_gui(self):
         # Configure grid
         self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_rowconfigure(3, weight=1)
+        self.root.grid_rowconfigure(3, weight=1, minsize=90)
+        self.root.grid_rowconfigure(4, weight=1)
         
         # Header (row 0)
         header = ttk.Label(
@@ -179,6 +181,8 @@ class OpenPeloGUI:
         self.adb_log_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=20, pady=5)
         self.adb_log_frame.grid_columnconfigure(0, weight=1)
         self.adb_log_frame.grid_rowconfigure(0, weight=1)
+        self.adb_log_frame.configure(height=200)
+        self.adb_log_frame.grid_propagate(False)
 
         self.adb_log = tk.Text(self.adb_log_frame, height=8, wrap='word', state='disabled')
         self.adb_log.configure(font=('TkFixedFont', 9))
@@ -199,26 +203,39 @@ class OpenPeloGUI:
 
         # Apps frame (row 4)
         self.apps_frame = ttk.LabelFrame(self.root, text="Available Apps", style='Section.TLabelframe')
-        self.apps_frame.grid(row=4, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
+        self.apps_frame.grid(row=4, column=0, columnspan=2, sticky='nsew', padx=20, pady=10)
         self.apps_frame.grid_columnconfigure(0, weight=1)
+        self.apps_frame.grid_rowconfigure(0, weight=1)
 
-        # App checkboxes
+        self.apps_canvas = tk.Canvas(self.apps_frame, borderwidth=0, highlightthickness=0)
+        self.apps_scrollbar = ttk.Scrollbar(self.apps_frame, orient='vertical', command=self.apps_canvas.yview)
+        self.apps_canvas.configure(yscrollcommand=self.apps_scrollbar.set)
+        self.apps_canvas.grid(row=0, column=0, sticky='nsew')
+        self.apps_scrollbar.grid(row=0, column=1, sticky='ns')
+
+        self.apps_inner = ttk.Frame(self.apps_canvas)
+        self.apps_inner_window = self.apps_canvas.create_window((0, 0), window=self.apps_inner, anchor='nw')
+        self.apps_inner.grid_columnconfigure(0, weight=0)
+        self.apps_inner.grid_columnconfigure(1, weight=1)
+
+        self.apps_inner.bind(
+            '<Configure>',
+            lambda event: self.apps_canvas.configure(scrollregion=self.apps_canvas.bbox('all'))
+        )
+        self.apps_canvas.bind(
+            '<Configure>',
+            lambda event: self.apps_canvas.itemconfigure(self.apps_inner_window, width=event.width)
+        )
+
+        for widget in (self.apps_canvas, self.apps_inner):
+            widget.bind('<MouseWheel>', self._on_apps_mousewheel)
+            widget.bind('<Button-4>', self._on_apps_mousewheel)
+            widget.bind('<Button-5>', self._on_apps_mousewheel)
+
+        self.apps_canvas.configure(height=220)
+
         self.app_vars = {}
-        for i, (app_name, app_info) in enumerate(self.available_apps.items()):
-            var = tk.BooleanVar()
-            self.app_vars[app_name] = var
-            
-            ttk.Checkbutton(
-                self.apps_frame,
-                text=app_name,
-                variable=var
-            ).grid(row=i, column=0, sticky='w')
-            
-            ttk.Label(
-                self.apps_frame,
-                text=app_info.get('description', ''),
-                style='Status.TLabel'
-            ).grid(row=i, column=1, sticky='w', padx=10)
+        self._display_apps_placeholder()
 
         # Buttons frame (row 5)
         buttons_frame = ttk.Frame(self.root)
@@ -471,6 +488,70 @@ class OpenPeloGUI:
             base = f"{base} ({abi})"
 
         return base
+
+    def _clear_apps_view(self):
+        if not hasattr(self, 'apps_inner'):
+            return
+        for widget in self.apps_inner.winfo_children():
+            widget.destroy()
+        if hasattr(self, 'apps_canvas'):
+            try:
+                self.apps_canvas.yview_moveto(0)
+            except Exception:
+                pass
+
+    def _on_apps_mousewheel(self, event):
+        canvas = getattr(self, 'apps_canvas', None)
+        if canvas is None:
+            return 'break'
+        try:
+            if getattr(event, 'delta', 0):
+                direction = -1 if event.delta > 0 else 1
+                canvas.yview_scroll(direction, 'units')
+            elif getattr(event, 'num', None) in (4, 5):
+                direction = -1 if event.num == 4 else 1
+                canvas.yview_scroll(direction, 'units')
+        except Exception:
+            pass
+        return 'break'
+
+    def _display_apps_placeholder(self, message: Optional[str] = None):
+        placeholder = message or (
+            "Compatible applications will be displayed here once your Peloton device is detected."
+        )
+        self._clear_apps_view()
+        self.app_vars = {}
+        ttk.Label(
+            self.apps_inner,
+            text=placeholder,
+            style='Status.TLabel',
+            wraplength=440,
+            justify='center'
+        ).grid(row=0, column=0, sticky='nsew', padx=10, pady=20)
+
+    def _render_available_apps(self):
+        self._clear_apps_view()
+        self.app_vars = {}
+
+        if not self.available_apps:
+            self._display_apps_placeholder("No compatible applications found for this device.")
+            return
+
+        for i, (app_name, app_info) in enumerate(self.available_apps.items()):
+            var = tk.BooleanVar()
+            self.app_vars[app_name] = var
+
+            ttk.Checkbutton(
+                self.apps_inner,
+                text=app_name,
+                variable=var
+            ).grid(row=i, column=0, sticky='w', padx=(10, 0), pady=2)
+
+            ttk.Label(
+                self.apps_inner,
+                text=app_info.get('description', ''),
+                style='Status.TLabel'
+            ).grid(row=i, column=1, sticky='w', padx=10, pady=2)
 
     def load_config(self, device_abi: Optional[str] = None):
         """Load available apps from config file, filtered by device ABI."""
@@ -736,22 +817,7 @@ class OpenPeloGUI:
 
                 if should_reload_apps:
                     self.available_apps = self.load_config(resolved_abi)
-                    for widget in self.apps_frame.winfo_children():
-                        widget.destroy()
-                    self.app_vars = {}
-                    for i, (app_name, app_info) in enumerate(self.available_apps.items()):
-                        var = tk.BooleanVar()
-                        self.app_vars[app_name] = var
-                        ttk.Checkbutton(
-                            self.apps_frame,
-                            text=app_name,
-                            variable=var
-                        ).grid(row=i, column=0, sticky='w')
-                        ttk.Label(
-                            self.apps_frame,
-                            text=app_info.get('description', ''),
-                            style='Status.TLabel'
-                        ).grid(row=i, column=1, sticky='w', padx=10)
+                    self._render_available_apps()
 
                 # Enable buttons (idempotent)
                 self.install_btn.config(state='normal')
@@ -779,15 +845,7 @@ class OpenPeloGUI:
                     self.install_local_btn.config(state='disabled')
                     self.screenshot_btn.config(state='disabled')
                     self.record_btn.config(state='disabled')
-                    for widget in self.apps_frame.winfo_children():
-                        widget.destroy()
-                    ttk.Label(
-                        self.apps_frame,
-                        text="Compatible applications will be displayed here once your Peloton device is detected.",
-                        style='Status.TLabel',
-                        wraplength=400,
-                        justify='center'
-                    ).grid(row=0, column=0, columnspan=2, pady=20)
+                    self._display_apps_placeholder()
                     self.log_adb_message("ADB connection lost.", tag='status')
                 else:
                     # Keep status message current if something else overwrote it
