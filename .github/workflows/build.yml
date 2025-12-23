@@ -184,7 +184,6 @@ jobs:
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
           --include-data-dir=ADB=ADB \
           --include-data-dir=platform-tools=platform-tools \
-          --macos-disable-console \
           --output-filename=OpenPelo \
           --output-dir=build/macos-arm \
           --remove-output \
@@ -240,7 +239,6 @@ jobs:
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
           --include-data-dir=ADB=ADB \
           --include-data-dir=platform-tools=platform-tools \
-          --macos-disable-console \
           --output-filename=OpenPelo \
           --output-dir=build/macos-intel \
           --remove-output \
