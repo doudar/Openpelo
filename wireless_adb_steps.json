@@ -6,7 +6,7 @@
         },
         {
             "title": "Open Developer Options",
-            "description": "Go to Settings -> Developer Options (if you don't see Developer Options, you need to enable it first using the Developer Mode Guide)"
+            "description": "Go to Settings -> System -> Developer Options (if you don't see Developer Options, you need to enable it first using the Developer Mode Guide)"
         },
         {
             "title": "Enable Wireless Debugging",
