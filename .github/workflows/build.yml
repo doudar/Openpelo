@@ -81,6 +81,7 @@ jobs:
         python -m nuitka `
           --standalone `
           --onefile `
+          --mode=app `
           --enable-plugin=tk-inter `
           --include-package=certifi `
           --include-data-file=apps_config.json=apps_config.json `
@@ -114,6 +115,11 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+
+    - name: Install Tk system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk tk-dev
     
     - name: Install dependencies
       run: |
@@ -125,6 +131,7 @@ jobs:
         python -m nuitka \
           --standalone \
           --onefile \
+          --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
           --include-data-file=apps_config.json=apps_config.json \
@@ -169,6 +176,7 @@ jobs:
         python -m nuitka \
           --standalone \
           --onefile \
+          --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
           --include-data-file=apps_config.json=apps_config.json \
@@ -224,6 +232,7 @@ jobs:
         arch -x86_64 python -m nuitka \
           --standalone \
           --onefile \
+          --mode=app \
           --enable-plugin=tk-inter \
           --include-package=certifi \
           --include-data-file=apps_config.json=apps_config.json \
