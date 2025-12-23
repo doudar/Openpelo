@@ -100,22 +100,82 @@ To add new apps to the installer, simply edit the `apps_config.json` file. The c
 
 ### Automated Builds
 
-This project uses GitHub Actions to automatically build executables for Windows and Mac:
-- Builds are triggered on pushes to main branch and pull requests
-- Release builds are created automatically when a new release is published
-- Built executables are available on the Releases page
+This project uses GitHub Actions with [Nuitka](https://nuitka.net/) to build standalone executables for Windows, macOS (Intel and Apple Silicon), and Linux:
+- Builds are triggered on pushes to main, pull requests, and when a release is created
+- Nuitka compiles `openpelo.py` to optimized binaries while bundling required assets (ADB tools, configuration files, and certifi certificates)
+- Produced artifacts are attached to releases: `OpenPelo.exe`, `OpenPelo-macOS-*.zip`, and `OpenPelo-linux.tar.gz`
 
 The build process:
-1. Sets up Python environment
-2. Installs dependencies
-3. Creates standalone executables using PyInstaller
-4. Uploads executables as release assets
+1. Sets up a Python environment on each runner
+2. Installs Nuitka + supporting packages (zstandard, certifi, etc.)
+3. Compiles OpenPelo with `--standalone --onefile` and includes runtime data directories
+4. Packages platform-specific outputs (zip/tar.gz) and uploads them as release assets
 
 To create a new release:
 1. Go to the Releases page
 2. Click "Create a new release"
-3. Tag version and publish
-4. GitHub Actions will automatically build and attach the executables
+3. Tag the version and publish
+4. GitHub Actions will automatically build, package, and attach the Nuitka executables
+
+### Building With Nuitka Locally
+
+If you need to create a build outside of GitHub Actions:
+
+1. Install dependencies:
+    ```bash
+    python -m pip install --upgrade pip
+    pip install nuitka zstandard certifi pillow
+    ```
+2. Run Nuitka for your platform (examples):
+    - **Windows PowerShell**
+       ```powershell
+       python -m nuitka `
+          --standalone `
+          --onefile `
+          --enable-plugin=tk-inter `
+          --include-package=certifi `
+          --include-data-file=apps_config.json=apps_config.json `
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json `
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json `
+          --include-data-dir=ADB=ADB `
+          --include-data-dir=platform-tools=platform-tools `
+          --windows-disable-console `
+          --windows-icon-from-ico=Icon.ico `
+          --output-filename=OpenPelo.exe `
+          openpelo.py
+       ```
+    - **Linux**
+       ```bash
+       python -m nuitka \
+          --standalone \
+          --onefile \
+          --enable-plugin=tk-inter \
+          --include-package=certifi \
+          --include-data-file=apps_config.json=apps_config.json \
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
+          --include-data-dir=ADB=ADB \
+          --include-data-dir=platform-tools=platform-tools \
+          --output-filename=OpenPelo \
+          openpelo.py
+       ```
+    - **macOS**
+       ```bash
+       python -m nuitka \
+          --standalone \
+          --onefile \
+          --enable-plugin=tk-inter \
+          --include-package=certifi \
+          --include-data-file=apps_config.json=apps_config.json \
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
+          --include-data-dir=ADB=ADB \
+          --include-data-dir=platform-tools=platform-tools \
+          --macos-disable-console \
+          --output-filename=OpenPelo \
+          openpelo.py
+       ```
+3. Package the resulting binary if needed (zip/tar.gz) before distribution.
 
 ```json
 {

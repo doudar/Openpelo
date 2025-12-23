@@ -65,11 +65,28 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk pillow
+        pip install nuitka zstandard certifi pillow
     
     - name: Build executable
       run: |
-        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json;." --add-data "usb_debug_steps.json;." --add-data "wireless_adb_steps.json;." --add-data "ADB/platform-tools-latest-windows.zip;ADB/" openpelo.py
+        python -m nuitka ^
+          --standalone ^
+          --onefile ^
+          --enable-plugin=tk-inter ^
+          --include-package=certifi ^
+          --include-data-file=apps_config.json=apps_config.json ^
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json ^
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json ^
+          --include-data-dir=ADB=ADB ^
+          --include-data-dir=platform-tools=platform-tools ^
+          --windows-disable-console ^
+          --windows-icon-from-ico=Icon.ico ^
+          --output-filename=OpenPelo.exe ^
+          --output-dir=build/windows ^
+          --remove-output ^
+          openpelo.py
+        New-Item -ItemType Directory -Path dist -Force | Out-Null
+        Copy-Item build/windows/OpenPelo.exe dist/OpenPelo.exe
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -90,55 +107,34 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk pillow
+        pip install nuitka zstandard certifi pillow
     
     - name: Build executable
       run: |
-        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." --add-data "wireless_adb_steps.json:." --add-data "ADB/platform-tools-latest-linux.zip:ADB/" openpelo.py
-    
-    - name: Install AppImage dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libfuse2 imagemagick
-
-    - name: Create AppImage
-      run: |
-        # Make the executable
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --enable-plugin=tk-inter \
+          --include-package=certifi \
+          --include-data-file=apps_config.json=apps_config.json \
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
+          --include-data-dir=ADB=ADB \
+          --include-data-dir=platform-tools=platform-tools \
+          --output-filename=OpenPelo \
+          --output-dir=build/linux \
+          --remove-output \
+          openpelo.py
+        mkdir -p dist
+        cp build/linux/OpenPelo dist/OpenPelo
         chmod +x dist/OpenPelo
-        
-        # Create AppDir structure
-        mkdir -p dist/AppDir/usr/bin
-        mkdir -p dist/AppDir/usr/share/icons/hicolor/256x256/apps
-        cp dist/OpenPelo dist/AppDir/usr/bin/
-        
-        # Convert ico to png and place in correct location
-        convert Icon.ico[0] dist/AppDir/usr/share/icons/hicolor/256x256/apps/openpelo.png
-        
-        # Create desktop entry
-        cat > dist/AppDir/openpelo.desktop << 'EOL'
-        [Desktop Entry]
-        Name=OpenPelo
-        Exec=usr/bin/OpenPelo
-        Icon=openpelo
-        Type=Application
-        Categories=Utility;
-        EOL
-        
-        # Create symlink for icon in root
-        ln -s usr/share/icons/hicolor/256x256/apps/openpelo.png dist/AppDir/openpelo.png
-        
-        # Download AppImage tool
-        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-        chmod +x appimagetool-x86_64.AppImage
-        
-        # Create AppImage
-        ./appimagetool-x86_64.AppImage dist/AppDir dist/OpenPelo.AppImage
+        tar -czf dist/OpenPelo-linux.tar.gz -C dist OpenPelo
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-Linux
-        path: dist/OpenPelo.AppImage
+        path: dist/OpenPelo-linux.tar.gz
 
   build-macos-arm:
     needs: [bump-version]
@@ -153,12 +149,28 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk pillow
+        pip install nuitka zstandard certifi pillow
     
     - name: Build executable
       run: |
-        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." --add-data "wireless_adb_steps.json:." --add-data "ADB/platform-tools-latest-darwin.zip:ADB/" openpelo.py
-        chmod +x dist/OpenPelo
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --enable-plugin=tk-inter \
+          --include-package=certifi \
+          --include-data-file=apps_config.json=apps_config.json \
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
+          --include-data-dir=ADB=ADB \
+          --include-data-dir=platform-tools=platform-tools \
+          --macos-disable-console \
+          --output-filename=OpenPelo \
+          --output-dir=build/macos-arm \
+          --remove-output \
+          openpelo.py
+        chmod +x build/macos-arm/OpenPelo
+        mkdir -p dist
+        cp build/macos-arm/OpenPelo dist/OpenPelo
     
     - name: Package executable
       run: |
@@ -185,12 +197,28 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller certifi tk pillow
+        pip install nuitka zstandard certifi pillow
     
     - name: Build executable
       run: |
-        pyinstaller --name="OpenPelo" --onefile --noconsole --icon="Icon.ico" --add-data "apps_config.json:." --add-data "usb_debug_steps.json:." --add-data "wireless_adb_steps.json:." --add-data "ADB/platform-tools-latest-darwin.zip:ADB/" openpelo.py
-        chmod +x dist/OpenPelo
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --enable-plugin=tk-inter \
+          --include-package=certifi \
+          --include-data-file=apps_config.json=apps_config.json \
+          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
+          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
+          --include-data-dir=ADB=ADB \
+          --include-data-dir=platform-tools=platform-tools \
+          --macos-disable-console \
+          --output-filename=OpenPelo \
+          --output-dir=build/macos-intel \
+          --remove-output \
+          openpelo.py
+        chmod +x build/macos-intel/OpenPelo
+        mkdir -p dist
+        cp build/macos-intel/OpenPelo dist/OpenPelo
     
     - name: Package executable
       run: |
@@ -228,6 +256,6 @@ jobs:
         name: Release v${{ steps.get_version.outputs.version }}
         files: |
           OpenPelo-Windows/OpenPelo.exe
-          OpenPelo-Linux/OpenPelo.AppImage
+          OpenPelo-Linux/OpenPelo-linux.tar.gz
           OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.zip
           OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.zip
