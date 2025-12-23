@@ -77,13 +77,14 @@ jobs:
           --standalone `
           --onefile `
           --enable-plugin=tk-inter `
+          --assume-yes-for-downloads `
           --include-package=certifi `
           --include-data-file=apps_config.json=apps_config.json `
           --include-data-file=usb_debug_steps.json=usb_debug_steps.json `
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json `
           --include-data-dir=ADB=ADB `
           --include-data-dir=platform-tools=platform-tools `
-          --windows-disable-console `
+          --windows-console-mode=disable `
           --windows-icon-from-ico=Icon.ico `
           --output-filename=OpenPelo.exe `
           --output-dir=build/windows `
