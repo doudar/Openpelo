@@ -4,6 +4,7 @@ import platform
 import urllib.request
 from urllib.parse import urlparse
 import zipfile
+import logging
 import shlex
 import subprocess
 import certifi
@@ -1359,7 +1360,7 @@ class WirelessPairingDialog:
                     'connect_port': port
                 })
         if unparsed:
-            print(f"Unparsed adb mdns lines: {unparsed}")
+            logging.warning("Unparsed adb mdns lines: %s", unparsed)
         return devices
 
     def _discover_mdns_devices(self):
@@ -1376,8 +1377,8 @@ class WirelessPairingDialog:
         """Scan the local network for wireless debugging devices using adb mdns."""
         try:
             self.scan_btn.config(state='disabled')
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug("Unable to disable scan button: %s", e)
         self.status_label.config(text="Scanning for devices...")
 
         def worker():
@@ -1408,8 +1409,8 @@ class WirelessPairingDialog:
                     messagebox.showerror("Scan Failed", f"Failed to scan for devices:\n{error}")
                 try:
                     self.scan_btn.config(state='normal')
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.debug("Unable to re-enable scan button: %s", e)
                 self.status_label.config(text="")
                 self.check_fields()
 
@@ -1601,8 +1602,8 @@ class WirelessPairingDialog:
     def show(self):
         try:
             self.scan_for_devices()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug("Auto-scan failed to start: %s", e)
         self.window.grab_set()  # Make window modal
         self.window.focus_set()
 
