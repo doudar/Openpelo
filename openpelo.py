@@ -1326,18 +1326,23 @@ class WirelessPairingDialog:
 
     def _parse_mdns_services(self, output: str):
         devices = {}
+        unparsed = []
         for raw in (output or '').splitlines():
             if '_adb-tls-' not in raw:
+                unparsed.append(raw)
                 continue
             parts = raw.split()
             if len(parts) < 3:
+                unparsed.append(raw)
                 continue
             service_name = parts[0].strip().rstrip('.')
             address = parts[-2].strip()
             port = parts[-1].strip()
             if not port.isdigit() or not address:
+                unparsed.append(raw)
                 continue
             if '._adb-tls-' not in service_name:
+                unparsed.append(raw)
                 continue
             key = service_name.split('._adb-tls-')[0]
             entry = devices.setdefault(key, {'name': key})
@@ -1353,6 +1358,8 @@ class WirelessPairingDialog:
                     'connect_ip': address,
                     'connect_port': port
                 })
+        if unparsed:
+            print(f"Unparsed adb mdns lines: {unparsed}")
         return devices
 
     def _discover_mdns_devices(self):
@@ -1481,7 +1488,7 @@ class WirelessPairingDialog:
                 pair_result = run_adb(*pair_args, timeout=90)
 
                 if pair_result.returncode != 0 or 'Failed' in pair_result.stdout or 'failed' in pair_result.stderr:
-                    error_msg = (pair_result.stdout or '') + (pair_result.stderr or '')
+                    error_msg = "\n".join(filter(None, [pair_result.stdout, pair_result.stderr]))
                     self.status_label.config(text="Pairing failed!")
                     messagebox.showerror(
                         "Pairing Failed",
@@ -1516,16 +1523,17 @@ class WirelessPairingDialog:
                                 refreshed = self._discover_mdns_devices()
                                 last_mdns_refresh = time.time()
                                 self.discovered_devices.update(refreshed)
-                                device_info = refreshed.get(selected_device_key, device_info)
-                                if selected_device:
-                                    selected_device.update(device_info)
+                                device_info = {**device_info, **refreshed.get(selected_device_key, {})}
                         except Exception as e:
                             last_error = str(e)
 
                     connect_service = device_info.get('connect_service')
                     pairing_service = device_info.get('pairing_service')
                     if not connect_service and pairing_service and '_adb-tls-pairing' in pairing_service:
-                        connect_service = pairing_service.replace('_adb-tls-pairing', '_adb-tls-connect')
+                        base_service = pairing_service.split('._adb-tls-pairing', 1)[0]
+                        connect_service = f"{base_service}._adb-tls-connect._tcp"
+                        if pairing_service.endswith('.'):
+                            connect_service += '.'
 
                     connect_ip = device_info.get('connect_ip') or device_info.get('pairing_ip') or ip
                     connect_port = device_info.get('connect_port') or device_info.get('pairing_port') or conport
@@ -1545,7 +1553,7 @@ class WirelessPairingDialog:
                     ):
                         connected = True
                         break
-                    last_error = (connect_result.stdout or '') + (connect_result.stderr or '')
+                    last_error = "\n".join(filter(None, [connect_result.stdout, connect_result.stderr]))
                     time.sleep(retry_wait)
 
                 if not connected:
