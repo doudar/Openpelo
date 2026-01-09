@@ -12,11 +12,13 @@ import ssl
 import threading
 import time
 import json
+import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable, List, Set
 
 logging.basicConfig(level=logging.INFO)
 
@@ -80,10 +82,12 @@ class OpenPeloGUI:
         
         self.setup_gui()
         self._device_name_cache = {}
+        self._device_serial_cache = {}
         self._last_device_info = None
         self._last_device_count = 0
         self.check_adb_thread = None
         self.install_thread = None
+        self.local_install_thread = None
         self.recording_process = None
         self.is_recording = False
         # Heartbeat / connection tracking
@@ -91,6 +95,12 @@ class OpenPeloGUI:
         self._heartbeat_running = False
         self._last_connection_state = None  # True/False
         self._last_device_abi = None
+        self.wireless_dialog = None
+        self.device_check_vars = {}
+        self._current_devices: List[dict] = []
+        self._selected_device_cache: List[str] = []
+        self._processing_devices = False
+        self.recording_serial = None
 
         # Ensure the window stays on top on launch (Windows console can steal focus)
         self.root.after(100, self._bring_to_front)
@@ -117,6 +127,21 @@ class OpenPeloGUI:
                 self.root.after(200, lambda: self.root.attributes('-topmost', False))
         except Exception:
             pass
+
+    def _close_wireless_dialog(self):
+        dialog = getattr(self, 'wireless_dialog', None)
+        if not dialog:
+            return
+        try:
+            dialog.request_auto_close()
+        except AttributeError:
+            try:
+                dialog._on_close()
+            except Exception:
+                try:
+                    dialog.window.destroy()
+                except Exception:
+                    pass
 
     def setup_gui(self):
         # Configure grid
@@ -145,7 +170,7 @@ class OpenPeloGUI:
         )
         self.status_label.grid(row=0, column=0, sticky='w')
 
-    # USB Debug Guide button
+        # USB Debug Guide button
         self.debug_btn = tk.Button(
             self.root,
             text="Developer Mode Guide",
@@ -171,6 +196,17 @@ class OpenPeloGUI:
             command=self.check_device_connection
         )
         self.refresh_btn.grid(row=0, column=2, sticky='e')
+
+        # Device selection panel (row 1 inside status frame)
+        self.device_selection_frame = ttk.Frame(status_frame)
+        self.device_selection_frame.grid(row=1, column=0, columnspan=3, sticky='ew', pady=(6, 0))
+        self.device_selection_frame.grid_columnconfigure(0, weight=1)
+        self.device_selection_note = ttk.Label(
+            self.device_selection_frame,
+            text="No devices detected.",
+            style='Status.TLabel'
+        )
+        self.device_selection_note.grid(row=0, column=0, sticky='w')
 
         # Progress bar (row 2)
         self.progress = ttk.Progressbar(
@@ -327,6 +363,15 @@ class OpenPeloGUI:
         timestamp = datetime.now().strftime("[%H:%M:%S] ")
         lines = text.splitlines() or ['']
 
+        if tag in ('stdout', 'status'):
+            lowered = text.lower()
+            if 'connected to ' in lowered or 'connected via wifi' in lowered:
+                if hasattr(self, 'root'):
+                    try:
+                        self.root.after(0, self._close_wireless_dialog)
+                    except Exception:
+                        pass
+
         if not hasattr(self, 'adb_log') or not hasattr(self, 'root'):
             self._pending_log_messages.append((timestamp, lines, tag))
             return
@@ -338,6 +383,226 @@ class OpenPeloGUI:
             self.root.after(0, append_lines)
         except Exception:
             self._pending_log_messages.append((timestamp, lines, tag))
+
+    def _format_device_checkbox_label(self, info: dict) -> str:
+        name = info.get('name') or info.get('serial') or 'Device'
+        transport = info.get('transport')
+        if transport == 'wifi':
+            if info.get('ip'):
+                address = info['ip']
+                if info.get('port'):
+                    address = f"{address}:{info['port']}"
+                return f"{name} • WiFi ({address})"
+            return f"{name} • WiFi"
+        return f"{name} • USB"
+
+    def _get_selected_serials(self) -> List[str]:
+        return [serial for serial, var in self.device_check_vars.items() if var.get()]
+
+    def _set_device_selection(self, serials: List[str]):
+        serial_set = set(serials)
+        for serial, var in self.device_check_vars.items():
+            var.set(serial in serial_set)
+        self._selected_device_cache = [serial for serial in serials if serial in self.device_check_vars]
+
+    def _choose_default_device(self, devices: List[dict]) -> Optional[str]:
+        for device in devices:
+            if device.get('transport') == 'wifi':
+                return device.get('serial')
+        return devices[0]['serial'] if devices else None
+
+    def _update_install_buttons_state(self):
+        has_device = bool(self._get_selected_serials())
+        busy = False
+        try:
+            busy = (
+                (self.install_thread and self.install_thread.is_alive())
+                or (self.local_install_thread and self.local_install_thread.is_alive())
+            )
+        except AttributeError:
+            pass
+
+        state = 'normal' if has_device and not busy else 'disabled'
+        try:
+            self.install_btn.config(state=state)
+            self.install_local_btn.config(state=state)
+        except Exception:
+            pass
+
+    def _update_device_selection(self, devices: List[dict]):
+        prev_selected = set(self._selected_device_cache or [])
+        for widget in self.device_selection_frame.winfo_children():
+            widget.destroy()
+
+        self.device_check_vars = {}
+
+        if not devices:
+            self.device_selection_note = ttk.Label(
+                self.device_selection_frame,
+                text="No devices detected.",
+                style='Status.TLabel'
+            )
+            self.device_selection_note.grid(row=0, column=0, sticky='w')
+            self._selected_device_cache = []
+            self._update_install_buttons_state()
+            return
+
+        instructions = ttk.Label(
+            self.device_selection_frame,
+            text="Select the device(s) to target.",
+            style='Status.TLabel'
+        )
+        instructions.grid(row=0, column=0, sticky='w', pady=(0, 4))
+
+        for idx, device in enumerate(devices, start=1):
+            serial = device.get('serial')
+            var = tk.BooleanVar(value=serial in prev_selected)
+            chk = ttk.Checkbutton(
+                self.device_selection_frame,
+                text=self._format_device_checkbox_label(device),
+                variable=var,
+                command=self.on_device_selection_change
+            )
+            chk.grid(row=idx, column=0, sticky='w', pady=2)
+            self.device_check_vars[serial] = var
+
+        if not any(var.get() for var in self.device_check_vars.values()):
+            default_serial = self._choose_default_device(devices)
+            if default_serial:
+                self.device_check_vars[default_serial].set(True)
+
+        self._selected_device_cache = self._get_selected_serials()
+        self._update_install_buttons_state()
+
+    def on_device_selection_change(self):
+        self._selected_device_cache = self._get_selected_serials()
+        self._update_install_buttons_state()
+        if self._current_devices:
+            self._process_connected_devices(self._current_devices, update_selection=False)
+
+    def _require_single_device(self, action: str) -> Optional[str]:
+        selected = self._get_selected_serials()
+        if not selected:
+            messagebox.showwarning("No Device Selected", f"Select a device to {action}.")
+            return None
+        if len(selected) > 1:
+            messagebox.showwarning(
+                "Multiple Devices Selected",
+                f"Select only one device to {action}."
+            )
+            return None
+        return selected[0]
+
+    def _process_connected_devices(self, devices: List[dict], update_selection: bool) -> bool:
+        if self._processing_devices:
+            return bool(devices)
+        self._processing_devices = True
+        try:
+            self._current_devices = list(devices)
+            previous_count = self._last_device_count
+            previous_info = self._last_device_info or {}
+            previous_serial = previous_info.get('serial')
+            previous_ip = previous_info.get('ip')
+            previous_transport = previous_info.get('transport')
+            previous_abi = self._last_device_abi
+
+            if update_selection:
+                self._update_device_selection(devices)
+
+            selected = [
+                serial for serial in self._selected_device_cache
+                if any(d.get('serial') == serial for d in devices)
+            ]
+            self._set_device_selection(selected)
+
+            if devices and not self._selected_device_cache:
+                default_serial = self._choose_default_device(devices)
+                if default_serial:
+                    self._set_device_selection([default_serial])
+
+            has_selection = bool(self._selected_device_cache)
+
+            if not devices:
+                self.status_label.config(
+                    text="❌ No device detected. Please connect your device and enable USB debugging."
+                )
+                self._display_apps_placeholder()
+                self._last_device_info = None
+                self._last_device_abi = None
+                self._last_device_count = 0
+                self._selected_device_cache = []
+                self.screenshot_btn.config(state='disabled')
+                if not self.is_recording:
+                    self.record_btn.config(state='disabled')
+                self._update_install_buttons_state()
+                return False
+
+            primary_device = None
+            if has_selection:
+                target_serial = self._selected_device_cache[0]
+                primary_device = next((d for d in devices if d.get('serial') == target_serial), None)
+            if not primary_device:
+                primary_device = next((d for d in devices if d.get('transport') == 'wifi'), devices[0])
+                if primary_device:
+                    self._set_device_selection([primary_device.get('serial')])
+                    has_selection = True
+
+            device_abi = self.get_device_abi(primary_device['serial']) if primary_device else None
+            resolved_abi = device_abi or previous_abi
+
+            status_text = self._build_connection_status(primary_device, resolved_abi) if primary_device else "✅ Connected"
+            extra_selected = len(self._selected_device_cache) - 1
+            if extra_selected > 0:
+                status_text = f"{status_text} (+{extra_selected} more)"
+            self.status_label.config(text=status_text)
+
+            if len(devices) > 1 and len(devices) != previous_count and primary_device:
+                self.log_adb_message(
+                    f"Multiple devices detected. Prioritizing {primary_device['serial']} ({primary_device['transport']}).",
+                    tag='info'
+                )
+
+            should_reload_apps = (
+                self._last_connection_state is not True
+                or (primary_device and previous_serial != primary_device['serial'])
+                or (primary_device and primary_device.get('transport') != previous_transport)
+                or (device_abi and device_abi != previous_abi)
+            )
+
+            if should_reload_apps:
+                self.available_apps = self.load_config(resolved_abi)
+                self._render_available_apps()
+
+            if primary_device and (
+                self._last_connection_state is not True
+                or previous_serial != primary_device.get('serial')
+                or previous_ip != primary_device.get('ip')
+                or previous_transport != primary_device.get('transport')
+            ):
+                self.log_adb_message(status_text, tag='status')
+
+            self.install_btn.config(state='normal' if has_selection else 'disabled')
+            self.install_local_btn.config(state='normal' if has_selection else 'disabled')
+            if not has_selection:
+                self.status_label.config(text="Select a device to continue.")
+                self.screenshot_btn.config(state='disabled')
+                if not self.is_recording:
+                    self.record_btn.config(state='disabled')
+                self._display_apps_placeholder("Select a device to view compatible applications.")
+            else:
+                self.screenshot_btn.config(state='normal')
+                if not self.is_recording:
+                    self.record_btn.config(state='normal')
+            if self.is_recording:
+                self.record_btn.config(state='normal')
+
+            self._last_device_info = primary_device
+            self._last_device_abi = resolved_abi or None
+            self._last_device_count = len(devices)
+            self._update_install_buttons_state()
+            return True
+        finally:
+            self._processing_devices = False
 
     def _write_log_lines(self, timestamp: str, lines, tag: str):
         if not hasattr(self, 'adb_log'):
@@ -432,6 +697,16 @@ class OpenPeloGUI:
         self._device_name_cache[serial] = friendly_name
         return friendly_name
 
+    def get_physical_serial(self, serial: Optional[str]) -> str:
+        if not serial:
+            return ''
+        if serial in self._device_serial_cache:
+            return self._device_serial_cache[serial]
+
+        physical = self._adb_shell_getprop('ro.serialno', serial) or ''
+        self._device_serial_cache[serial] = physical
+        return physical
+
     def get_connected_devices(self, log: bool = False):
         try:
             result = self.adb_run('devices', log_to_panel=log, timeout=5)
@@ -457,20 +732,54 @@ class OpenPeloGUI:
             if status != 'device':
                 continue
 
-            transport = 'wifi' if ':' in serial else 'usb'
-            ip, port = None, None
-            if transport == 'wifi':
+            is_mdns_alias = serial.startswith('adb-') and serial.endswith('-tcp')
+
+            if ':' in serial:
+                transport = 'wifi'
                 host, _, host_port = serial.partition(':')
                 ip = host
                 port = host_port or None
+            elif is_mdns_alias:
+                transport = 'wifi'
+                ip, port = None, None
+            else:
+                transport = 'usb'
+                ip, port = None, None
 
             devices.append({
                 'serial': serial,
                 'transport': transport,
                 'ip': ip,
                 'port': port,
-                'name': self.get_device_name(serial)
+                'name': self.get_device_name(serial),
+                'physical_serial': self.get_physical_serial(serial) or serial,
+                '_mdns_alias': is_mdns_alias
             })
+
+        has_direct_wifi = any(d['transport'] == 'wifi' and not d.get('_mdns_alias') for d in devices)
+        if has_direct_wifi:
+            devices = [
+                d for d in devices
+                if not (d['transport'] == 'wifi' and d.get('_mdns_alias'))
+            ]
+
+            wifi_physical_serials = {
+                d.get('physical_serial')
+                for d in devices
+                if d['transport'] == 'wifi' and d.get('physical_serial')
+            }
+
+            if wifi_physical_serials:
+                devices = [
+                    d for d in devices
+                    if not (
+                        d['transport'] == 'usb'
+                        and (d.get('physical_serial') or d.get('serial')) in wifi_physical_serials
+                    )
+                ]
+
+            for device in devices:
+                device.pop('_mdns_alias', None)
 
         return devices
 
@@ -703,19 +1012,22 @@ class OpenPeloGUI:
 
     def take_screenshot(self):
         """Take a screenshot of the device screen"""
+        serial = self._require_single_device("take a screenshot")
+        if not serial:
+            return
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"screenshot_{timestamp}.png"
             save_path = os.path.join(self.save_location, filename)
             
             # Take screenshot
-            self.adb_run('shell', 'screencap', '-p', '/sdcard/screenshot.png', check=True)
+            self.adb_run('-s', serial, 'shell', 'screencap', '-p', '/sdcard/screenshot.png', check=True)
 
             # Pull screenshot from device
-            self.adb_run('pull', '/sdcard/screenshot.png', save_path, check=True)
+            self.adb_run('-s', serial, 'pull', '/sdcard/screenshot.png', save_path, check=True)
 
             # Clean up device
-            self.adb_run('shell', 'rm', '/sdcard/screenshot.png', check=True)
+            self.adb_run('-s', serial, 'shell', 'rm', '/sdcard/screenshot.png', check=True)
             
             messagebox.showinfo("Success", f"Screenshot saved to:\n{save_path}")
             self.log_adb_message(f"Screenshot saved to {save_path}", tag='status')
@@ -725,13 +1037,17 @@ class OpenPeloGUI:
     def toggle_recording(self):
         """Toggle screen recording"""
         if not self.is_recording:
+            serial = self._require_single_device("record the screen")
+            if not serial:
+                return
             try:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 self.current_recording = f"recording_{timestamp}.mp4"
                 device_path = f"/sdcard/{self.current_recording}"
+                self.recording_serial = serial
                 
                 # Start recording
-                record_cmd = [str(self.adb_path), 'shell', 'screenrecord', device_path]
+                record_cmd = [str(self.adb_path), '-s', serial, 'shell', 'screenrecord', device_path]
                 self.log_adb_message(f"$ {self._format_command(record_cmd)}", tag='command')
                 self.log_adb_message(f"Recording started: {device_path}", tag='info')
                 self.recording_process = subprocess.Popen(
@@ -746,35 +1062,62 @@ class OpenPeloGUI:
                 self.screenshot_btn.config(state='disabled')
                 
             except subprocess.CalledProcessError as e:
+                self.recording_serial = None
+                if self._current_devices:
+                    self._process_connected_devices(self._current_devices, update_selection=False)
+                messagebox.showerror("Error", f"Failed to start recording: {e}")
+            except Exception as e:
+                self.recording_serial = None
+                if self._current_devices:
+                    self._process_connected_devices(self._current_devices, update_selection=False)
                 messagebox.showerror("Error", f"Failed to start recording: {e}")
         else:
             try:
+                serial = self.recording_serial or self._require_single_device("stop recording")
+                if not serial:
+                    return
                 # Stop recording
                 if self.recording_process:
                     self.recording_process.terminate()
                     self.recording_process.wait(timeout=5)
                     self.log_adb_message("Screen recording stopped", tag='info')
+                self.recording_process = None
                 
                 # Wait for the file to be written
                 self.root.after(1000)
                 
                 # Pull recording from device
                 save_path = os.path.join(self.save_location, self.current_recording)
-                self.adb_run('pull', f'/sdcard/{self.current_recording}', save_path, check=True)
+                self.adb_run('-s', serial, 'pull', f'/sdcard/{self.current_recording}', save_path, check=True)
                 
                 # Clean up device
-                self.adb_run('shell', 'rm', f'/sdcard/{self.current_recording}', check=True)
+                self.adb_run('-s', serial, 'shell', 'rm', f'/sdcard/{self.current_recording}', check=True)
                 
                 self.is_recording = False
                 self.record_btn.config(text="🔴 Start Recording")
                 self.screenshot_btn.config(state='normal')
+                self.recording_serial = None
+                if self._current_devices:
+                    self._process_connected_devices(self._current_devices, update_selection=False)
                 
                 messagebox.showinfo("Success", f"Recording saved to:\n{save_path}")
                 self.log_adb_message(f"Recording saved to {save_path}", tag='status')
                 
             except subprocess.CalledProcessError as e:
+                self.is_recording = False
+                self.record_btn.config(text="🔴 Start Recording")
+                self.recording_serial = None
+                self.recording_process = None
+                if self._current_devices:
+                    self._process_connected_devices(self._current_devices, update_selection=False)
                 messagebox.showerror("Error", f"Failed to save recording: {e}")
             except Exception as e:
+                self.is_recording = False
+                self.record_btn.config(text="🔴 Start Recording")
+                self.recording_serial = None
+                self.recording_process = None
+                if self._current_devices:
+                    self._process_connected_devices(self._current_devices, update_selection=False)
                 messagebox.showerror("Error", f"An error occurred: {e}")
 
     def check_device_connection(self):
@@ -791,74 +1134,7 @@ class OpenPeloGUI:
                     return
             
             devices = self.get_connected_devices(log=True)
-            previous_count = self._last_device_count
-            connected = bool(devices)
-            if connected:
-                primary_device = next((d for d in devices if d['transport'] == 'wifi'), devices[0])
-                previous_info = self._last_device_info or {}
-                previous_serial = previous_info.get('serial')
-                previous_ip = previous_info.get('ip')
-                previous_transport = previous_info.get('transport')
-                previous_abi = self._last_device_abi
-
-                device_abi = self.get_device_abi(primary_device['serial']) or ''
-                resolved_abi = device_abi or previous_abi
-                status_text = self._build_connection_status(primary_device, resolved_abi)
-                self.status_label.config(text=status_text)
-
-                if len(devices) > 1 and len(devices) != previous_count:
-                    self.log_adb_message(
-                        f"Multiple devices detected. Prioritizing {primary_device['serial']} ({primary_device['transport']}).",
-                        tag='info'
-                    )
-
-                should_reload_apps = (
-                    self._last_connection_state is not True or
-                    primary_device['serial'] != previous_serial or
-                    primary_device.get('transport') != previous_transport or
-                    (device_abi and device_abi != previous_abi)
-                )
-
-                if should_reload_apps:
-                    self.available_apps = self.load_config(resolved_abi)
-                    self._render_available_apps()
-
-                # Enable buttons (idempotent)
-                self.install_btn.config(state='normal')
-                self.install_local_btn.config(state='normal')
-                self.screenshot_btn.config(state='normal')
-                self.record_btn.config(state='normal')
-
-                if (
-                    self._last_connection_state is not True
-                    or primary_device['serial'] != previous_serial
-                    or primary_device.get('ip') != previous_ip
-                    or primary_device.get('transport') != previous_transport
-                ):
-                    self.log_adb_message(status_text, tag='status')
-
-                self._last_device_info = primary_device
-                self._last_device_abi = resolved_abi or None
-                self._last_device_count = len(devices)
-            else:
-                if self._last_connection_state is not False:  # Only rebuild apps list once on disconnect
-                    self.status_label.config(
-                        text="❌ No device detected. Please connect your device and enable USB debugging."
-                    )
-                    self.install_btn.config(state='disabled')
-                    self.install_local_btn.config(state='disabled')
-                    self.screenshot_btn.config(state='disabled')
-                    self.record_btn.config(state='disabled')
-                    self._display_apps_placeholder()
-                    self.log_adb_message("ADB connection lost.", tag='status')
-                else:
-                    # Keep status message current if something else overwrote it
-                    self.status_label.config(
-                        text="❌ No device detected. Please connect your device and enable USB debugging."
-                    )
-                self._last_device_info = None
-                self._last_device_abi = None
-                self._last_device_count = 0
+            connected = self._process_connected_devices(devices, update_selection=True)
             self._last_connection_state = connected
             
             self.progress.stop()
@@ -879,8 +1155,22 @@ class OpenPeloGUI:
             messagebox.showwarning("Warning", "Please select at least one app to install.")
             return
 
+        serial = self._require_single_device("install the selected apps")
+        if not serial:
+            return
+
+        device_label = next(
+            (
+                f"{info.get('name') or serial}"
+                for info in self._current_devices
+                if info.get('serial') == serial
+            ),
+            serial
+        )
+
         def install():
             self.install_btn.config(state='disabled')
+            self.install_local_btn.config(state='disabled')
             self.refresh_btn.config(state='disabled')
             self.progress.start()
 
@@ -900,7 +1190,7 @@ class OpenPeloGUI:
 
                     # Install APK
                     self.status_label.config(text=f"Installing {app_name}...")
-                    result = self.adb_run('install', '-r', str(apk_path))
+                    result = self.adb_run('-s', serial, 'install', '-r', str(apk_path))
 
                     # Clean up APK file
                     apk_path.unlink()
@@ -918,9 +1208,10 @@ class OpenPeloGUI:
                         f"Error installing {app_name}: {e}"
                     )
 
-            self.status_label.config(text="Installation complete!")
+            self.status_label.config(text=f"Installation complete on {device_label}!")
             self.progress.stop()
-            self.install_btn.config(state='normal')
+            self.install_thread = None
+            self._update_install_buttons_state()
             self.refresh_btn.config(state='normal')
 
         if not self.install_thread or not self.install_thread.is_alive():
@@ -1009,6 +1300,10 @@ class OpenPeloGUI:
         
         if not apk_path:
             return
+
+        serial = self._require_single_device("install the APK")
+        if not serial:
+            return
             
         def install():
             self.install_btn.config(state='disabled')
@@ -1018,7 +1313,7 @@ class OpenPeloGUI:
             
             try:
                 self.status_label.config(text="Installing APK...")
-                result = self.adb_run('install', '-r', apk_path)
+                result = self.adb_run('-s', serial, 'install', '-r', apk_path)
                 
                 if 'Success' in result.stdout:
                     messagebox.showinfo("Success", "APK installed successfully!")
@@ -1038,12 +1333,13 @@ class OpenPeloGUI:
                 self.status_label.config(text="APK installation failed.")
             finally:
                 self.progress.stop()
-                self.install_btn.config(state='normal')
-                self.install_local_btn.config(state='normal')
+                self.local_install_thread = None
+                self._update_install_buttons_state()
                 self.refresh_btn.config(state='normal')
         
         # Run installation in a separate thread
         install_thread = threading.Thread(target=install)
+        self.local_install_thread = install_thread
         install_thread.start()
 
     def show_debug_guide(self):
@@ -1208,6 +1504,7 @@ class WirelessPairingDialog:
         self.window.title("Wireless Pairing")
         self.window.geometry("520x520")
         self.window.resizable(False, False)
+        self.window.protocol("WM_DELETE_WINDOW", self._on_close)
         
         if self.app:
             self._run_adb = lambda *args, **kwargs: self.app.adb_run(*args, **kwargs)
@@ -1223,8 +1520,20 @@ class WirelessPairingDialog:
         self.discovered_devices = {}
         self.device_index_map = []
         self.selected_device_key = None
+        self._port_scan_thread = None
+        self._port_scan_stop = None
+        self._port_scan_target = None
+        self._port_prompt = None
+        self._port_progress_dialog = None
+        self._port_progress_bar = None
+        self._manual_port_mode = False
+        self._pairing_in_progress = False
+        self._current_scan_ignore_ports = set()
+        self._port_scan_total = 0
         
         self.setup_gui()
+        if self.app:
+            self.app.wireless_dialog = self
     
     def setup_gui(self):
         # Header
@@ -1239,7 +1548,7 @@ class WirelessPairingDialog:
         # Info text
         info_label = ttk.Label(
             self.window,
-            text="Select your Peloton from the scan results and enter the pairing code shown on the wireless debugging screen. No IP/port needed when a device is selected.",
+            text="Select your Peloton from the scan results and enter the pairing code shown on the wireless debugging screen. Most fields will auto-fill after scanning.",
             wraplength=480,
             justify='center',
             padding=(0, 10)
@@ -1317,7 +1626,7 @@ class WirelessPairingDialog:
         self.cancel_btn = ttk.Button(
             button_frame,
             text="Cancel",
-            command=self.window.destroy
+            command=self._on_close
         )
         self.cancel_btn.pack(side='left', padx=5)
         
@@ -1336,43 +1645,87 @@ class WirelessPairingDialog:
         self.port_var.trace('w', self.check_fields)
         self.code_var.trace('w', self.check_fields)
         self.conport_var.trace('w', self.check_fields)
+        self.conport_entry.config(state='normal')
 
     def _parse_mdns_services(self, output: str):
         devices = {}
         unparsed = []
+
+        def parse_host_port(token: str):
+            host = token.strip()
+            port = None
+            if not host:
+                return host, port
+            if host.startswith('['):
+                closing = host.find(']')
+                if closing != -1:
+                    remainder = host[closing + 1:]
+                    candidate = remainder.lstrip(':')
+                    host = host[1:closing]
+                    if candidate.isdigit():
+                        port = candidate
+                        return host, port
+            if ':' in host:
+                candidate_host, candidate_port = host.rsplit(':', 1)
+                if candidate_port.isdigit():
+                    return candidate_host.strip('[]'), candidate_port
+            return host.strip('[]'), port
+
+        def build_service_name(instance: str, service_type: str) -> str:
+            base = f"{instance}.{service_type}".rstrip('.')
+            if not base.endswith('.local'):
+                base = f"{base}.local"
+            if not base.endswith('.'):
+                base = f"{base}."
+            return base
+
         for raw in (output or '').splitlines():
-            if not raw or not raw.strip():
+            line = raw.strip()
+            if not line or line.lower().startswith('list of discovered'):
                 continue
-            parts = raw.split()
+            if line.startswith('====') or line.startswith('----'):
+                continue
+
+            parts = line.split()
             if len(parts) < 3:
                 unparsed.append(raw)
                 continue
-            service_name = parts[0].strip().rstrip('.')
-            if '_adb-tls-' not in service_name:
-                continue
-            base_parts = service_name.split('._adb-tls-', 1)
-            if len(base_parts) < 2 or not base_parts[0]:
+
+            instance = parts[0].strip().rstrip('.')
+            service_type = parts[1].strip().rstrip('.')
+            host_port_token = parts[-1]
+            host, port = parse_host_port(host_port_token)
+
+            if port is None and len(parts) >= 4 and parts[-1].isdigit():
+                port = parts[-1]
+                host = parts[-2]
+
+            if not instance or not host or not port:
                 unparsed.append(raw)
                 continue
-            address = parts[-2].strip()
-            port = parts[-1].strip()
-            if not port.isdigit() or not address:
-                unparsed.append(raw)
-                continue
-            key = base_parts[0]
+
+            key = instance
             entry = devices.setdefault(key, {'name': key})
-            if '_adb-tls-pairing' in service_name:
+
+            service_name = build_service_name(instance, service_type)
+            if '_adb-tls-pairing' in service_type:
                 entry.update({
                     'pairing_service': service_name,
-                    'pairing_ip': address,
+                    'pairing_ip': host,
                     'pairing_port': port
                 })
-            elif '_adb-tls-connect' in service_name:
+            elif '_adb-tls-connect' in service_type:
                 entry.update({
                     'connect_service': service_name,
-                    'connect_ip': address,
+                    'connect_ip': host,
                     'connect_port': port
                 })
+            elif service_type == '_adb._tcp':
+                entry.update({
+                    'connect_ip': host,
+                    'connect_port': port
+                })
+
         if unparsed:
             logging.warning("Unparsed adb mdns lines encountered: %d", len(unparsed))
         return devices
@@ -1429,6 +1782,8 @@ class WirelessPairingDialog:
                     self.no_devices_label.config(
                         text="No devices found yet. Open the wireless debugging pairing screen on your Peloton, then click Scan."
                     )
+                    self._dismiss_port_prompt()
+                    self._stop_port_scan()
                     self.selected_device_key = None
                 if error:
                     messagebox.showerror("Scan Failed", f"Failed to scan for devices:\n{error}")
@@ -1446,20 +1801,33 @@ class WirelessPairingDialog:
     def on_device_select(self, event=None):
         selection = self.devices_list.curselection()
         if not selection:
+            self._manual_port_mode = False
+            self._dismiss_port_prompt()
+            self._stop_port_scan()
             self.selected_device_key = None
             self.check_fields()
             return
         index = selection[0]
         if index >= len(self.device_index_map):
             return
+        self._manual_port_mode = False
+        self._dismiss_port_prompt()
+        self._stop_port_scan()
         key = self.device_index_map[index]
         self.selected_device_key = key
         device = self.discovered_devices.get(key, {})
         self.ip_var.set(device.get('pairing_ip', device.get('connect_ip', '')))
         self.port_var.set(device.get('pairing_port', ''))
-        self.conport_var.set(device.get('connect_port', device.get('pairing_port', '')))
-        self.status_label.config(text=f"Selected {key}. Enter the pairing code to continue.")
+        connect_port = device.get('connect_port', '')
+        self.conport_var.set(connect_port)
+        if connect_port:
+            self.status_label.config(text=f"Selected {key}. Enter the pairing code to continue.")
+        else:
+            self.conport_var.set('')
+            self._show_port_scan_prompt(key, self.ip_var.get().strip())
+            self.status_label.config(text=f"Selected {key}. Choose how to provide the wireless debugging port.")
         self.check_fields()
+        self.conport_entry.config(state='normal')
     
     def check_fields(self, *args):
         """Enable connect button when all fields are filled"""
@@ -1479,6 +1847,10 @@ class WirelessPairingDialog:
         conport = self.conport_var.get().strip()
         selected_device_key = self.selected_device_key
         selected_device = self.discovered_devices.get(selected_device_key) if selected_device_key else None
+        selected_device_snapshot = dict(selected_device) if selected_device else None
+
+        self._stop_port_scan()
+        self._dismiss_port_prompt()
 
         if not code:
             messagebox.showerror("Error", "Please enter the pairing code.")
@@ -1493,6 +1865,7 @@ class WirelessPairingDialog:
         # Disable buttons during connection
         self.connect_btn.config(state='disabled')
         self.cancel_btn.config(state='disabled')
+        self._pairing_in_progress = True
         
         def connect():
             try:
@@ -1503,10 +1876,15 @@ class WirelessPairingDialog:
                 self.window.update()
 
                 pair_args = ['pair']
-                if selected_device and selected_device.get('pairing_service'):
-                    pair_args.append(f"--mdns-service={selected_device['pairing_service']}")
-                elif selected_device and selected_device.get('pairing_ip') and selected_device.get('pairing_port'):
-                    pair_args.append(f"{selected_device['pairing_ip']}:{selected_device['pairing_port']}")
+                pairing_ip = None
+                pairing_port = None
+                if selected_device_snapshot:
+                    pairing_ip = selected_device_snapshot.get('pairing_ip')
+                    pairing_port = selected_device_snapshot.get('pairing_port')
+                if pairing_ip and pairing_port:
+                    pair_args.append(f"{pairing_ip}:{pairing_port}")
+                elif selected_device_snapshot and selected_device_snapshot.get('pairing_service'):
+                    pair_args.append(f"--mdns-service={selected_device_snapshot['pairing_service']}")
                 else:
                     pair_args.append(f'{ip}:{port}')
                 pair_args.append(code)
@@ -1538,8 +1916,10 @@ class WirelessPairingDialog:
                 connected = False
                 last_error = ""
 
+                selected_device_info = dict(selected_device_snapshot) if selected_device_snapshot else None
+
                 while time.time() < connect_deadline and not connected:
-                    device_info = selected_device or {}
+                    device_info = selected_device_info or {}
                     needs_refresh = selected_device_key and (
                         not device_info.get('connect_service') or not device_info.get('connect_ip')
                     )
@@ -1550,10 +1930,9 @@ class WirelessPairingDialog:
                                 last_mdns_refresh = time.time()
                                 self.discovered_devices.update(refreshed)
                                 device_info = {**device_info, **refreshed.get(selected_device_key, {})}
+                                selected_device_info = device_info
                         except Exception as e:
                             last_error = str(e)
-                    if selected_device_key:
-                        selected_device = device_info
 
                     connect_service = device_info.get('connect_service')
                     if not connect_service:
@@ -1568,9 +1947,7 @@ class WirelessPairingDialog:
                     connect_port = device_info.get('connect_port') or conport
 
                     connect_args = ['connect']
-                    if connect_service:
-                        connect_args.append(f'--mdns-service={connect_service}')
-                    elif connect_ip and connect_port:
+                    if connect_ip and connect_port:
                         connect_args.append(f'{connect_ip}:{connect_port}')
                     else:
                         time.sleep(missing_info_wait)
@@ -1603,8 +1980,15 @@ class WirelessPairingDialog:
                     f"Successfully connected to device via WiFi!\n\nYou can now use OpenPelo wirelessly."
                 )
                 if self.app:
+                    self._pairing_in_progress = False
                     self.app.check_device_connection()
-                self.window.destroy()
+                    try:
+                        self.app._close_wireless_dialog()
+                    except Exception:
+                        pass
+                else:
+                    self._pairing_in_progress = False
+                    self._on_close()
                 
             except subprocess.TimeoutExpired:
                 self.status_label.config(text="Connection timeout!")
@@ -1622,6 +2006,8 @@ class WirelessPairingDialog:
                 )
                 self.connect_btn.config(state='normal')
                 self.cancel_btn.config(state='normal')
+            finally:
+                self._pairing_in_progress = False
         
         # Run in a thread to avoid blocking the UI
         thread = threading.Thread(target=connect)
@@ -1634,6 +2020,296 @@ class WirelessPairingDialog:
             logging.debug("Auto-scan failed to start: %s", e)
         self.window.grab_set()  # Make window modal
         self.window.focus_set()
+
+    def _on_close(self):
+        self._dismiss_port_prompt()
+        self._stop_port_scan()
+        if self.app and getattr(self.app, 'wireless_dialog', None) is self:
+            self.app.wireless_dialog = None
+        try:
+            self.window.destroy()
+        except Exception:
+            pass
+
+    def _dismiss_port_prompt(self):
+        prompt = self._port_prompt
+        self._port_prompt = None
+        if not prompt:
+            return
+        try:
+            prompt.grab_release()
+        except Exception:
+            pass
+        try:
+            prompt.destroy()
+        except Exception:
+            pass
+        try:
+            self.window.grab_set()
+        except Exception:
+            pass
+
+    def _dismiss_port_progress(self):
+        dialog = self._port_progress_dialog
+        bar = self._port_progress_bar
+        self._port_progress_dialog = None
+        self._port_progress_bar = None
+        if bar:
+            try:
+                bar.stop()
+            except Exception:
+                pass
+        if not dialog:
+            return
+        try:
+            dialog.grab_release()
+        except Exception:
+            pass
+        try:
+            dialog.destroy()
+        except Exception:
+            pass
+        try:
+            self.window.grab_set()
+        except Exception:
+            pass
+
+    def _show_port_scan_prompt(self, target_key: str, ip: str):
+        if self._manual_port_mode or not ip:
+            return
+        self._dismiss_port_prompt()
+        prompt = tk.Toplevel(self.window)
+        prompt.title("Scan For Port")
+        prompt.transient(self.window)
+        prompt.grab_set()
+
+        ttk.Label(
+            prompt,
+            text="Scan to fill remaining port?",
+            padding=(20, 15)
+        ).pack(fill='x')
+
+        ttk.Label(
+            prompt,
+            text="We can scan ports 30000-50000 automatically or you can enter it manually.",
+            wraplength=340,
+            justify='center'
+        ).pack(fill='x', padx=20)
+
+        button_frame = ttk.Frame(prompt)
+        button_frame.pack(fill='x', padx=20, pady=(10, 15))
+
+        def start_scan():
+            self._manual_port_mode = False
+            self._dismiss_port_prompt()
+            self._start_port_scan(target_key, ip)
+
+        def manual_entry():
+            self._dismiss_port_prompt()
+            self._cancel_port_scan_and_enable_manual()
+
+        ttk.Button(button_frame, text="Start Scan", command=start_scan).pack(side='left', expand=True, padx=5)
+        ttk.Button(button_frame, text="Enter Manually", command=manual_entry).pack(side='right', expand=True, padx=5)
+
+        prompt.protocol("WM_DELETE_WINDOW", manual_entry)
+        self._port_prompt = prompt
+
+    def _show_port_progress_dialog(self, total_ports: int):
+        self._dismiss_port_progress()
+        dialog = tk.Toplevel(self.window)
+        dialog.title("Scanning Port")
+        dialog.transient(self.window)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text="Scanning ports 30000-50000...",
+            padding=(20, 10)
+        ).pack(fill='x')
+
+        bar = ttk.Progressbar(dialog, mode='determinate', length=260)
+        bar.pack(fill='x', padx=20, pady=(0, 10))
+        try:
+            bar['maximum'] = max(total_ports, 1)
+        except Exception:
+            bar.config(maximum=max(total_ports, 1))
+        bar['value'] = 0
+
+        ttk.Button(
+            dialog,
+            text="Enter manually",
+            command=self._cancel_port_scan_and_enable_manual
+        ).pack(pady=(0, 15))
+
+        dialog.protocol("WM_DELETE_WINDOW", self._cancel_port_scan_and_enable_manual)
+        self._port_progress_dialog = dialog
+        self._port_progress_bar = bar
+
+    def _cancel_port_scan_and_enable_manual(self):
+        self._manual_port_mode = True
+        self._dismiss_port_progress()
+        self._stop_port_scan()
+        self.status_label.config(text="Enter the wireless debugging port shown on your Peloton.")
+        try:
+            self.conport_entry.focus_set()
+        except Exception:
+            pass
+
+    def _update_port_progress(self, scanned: int, total_ports: Optional[int] = None):
+        bar = self._port_progress_bar
+        if not bar:
+            return
+        try:
+            if total_ports and total_ports > 0:
+                bar.configure(maximum=max(total_ports, 1))
+            maximum = float(bar.cget('maximum'))
+            value = min(float(scanned), maximum)
+            bar.configure(value=value)
+        except Exception:
+            try:
+                bar.config(value=scanned)
+            except Exception:
+                pass
+
+    def request_auto_close(self):
+        if self._pairing_in_progress:
+            return
+        try:
+            self.window.after(0, self._on_close)
+        except Exception:
+            self._on_close()
+
+    def _probe_port(self, ip: str, port: int, stop_event: threading.Event, timeout: float = 0.05) -> bool:
+        if stop_event.is_set():
+            return False
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            result = sock.connect_ex((ip, port))
+            return result == 0
+        except OSError:
+            return False
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def _scan_open_port(
+        self,
+        ip: str,
+        stop_event: threading.Event,
+        ports_to_scan: List[int],
+        progress_callback: Optional[Callable[[int], None]] = None
+    ) -> Optional[int]:
+        executor = ThreadPoolExecutor(max_workers=32)
+        open_port = None
+        scanned = 0
+        try:
+            futures = {}
+            for port in ports_to_scan:
+                if stop_event.is_set():
+                    break
+                futures[executor.submit(self._probe_port, ip, port, stop_event)] = port
+            for future in as_completed(futures):
+                if stop_event.is_set():
+                    break
+                port = futures.get(future)
+                if port is None:
+                    continue
+                scanned += 1
+                if progress_callback:
+                    try:
+                        progress_callback(scanned)
+                    except Exception:
+                        pass
+                try:
+                    if future.result():
+                        open_port = port
+                        stop_event.set()
+                        break
+                except Exception:
+                    continue
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        return open_port
+
+    def _start_port_scan(self, target_key: str, ip: str):
+        if not ip or self._manual_port_mode:
+            return
+        self._stop_port_scan()
+        stop_event = threading.Event()
+        self._port_scan_stop = stop_event
+        self._port_scan_target = target_key
+        ignored_ports = set()
+        pairing_port_value = self.port_var.get().strip()
+        if pairing_port_value.isdigit():
+            ignored_ports.add(int(pairing_port_value))
+        self._current_scan_ignore_ports = ignored_ports
+        ports_to_scan = [port for port in range(30000, 50001) if port not in ignored_ports]
+        self._port_scan_total = len(ports_to_scan)
+        if not ports_to_scan:
+            self.status_label.config(text="Enter the wireless debugging port shown on your Peloton.")
+            return
+
+        self._show_port_progress_dialog(self._port_scan_total)
+        self._update_port_progress(0, self._port_scan_total)
+        self.status_label.config(text="Scanning for wireless debugging port...")
+
+        def report_progress(scanned_count: int):
+            self.window.after(0, lambda count=scanned_count: self._update_port_progress(count, self._port_scan_total))
+
+        def worker():
+            port = self._scan_open_port(ip, stop_event, ports_to_scan, report_progress)
+            self.window.after(0, lambda: self._handle_port_scan_result(target_key, stop_event, port, ignored_ports))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        self._port_scan_thread = thread
+        thread.start()
+
+    def _stop_port_scan(self):
+        stop_event = self._port_scan_stop
+        if stop_event:
+            stop_event.set()
+        thread = self._port_scan_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=0.1)
+        self._port_scan_stop = None
+        self._port_scan_thread = None
+        self._port_scan_target = None
+        self._current_scan_ignore_ports = set()
+        self._port_scan_total = 0
+        self._dismiss_port_progress()
+
+    def _handle_port_scan_result(
+        self,
+        target_key: str,
+        stop_event: threading.Event,
+        port: Optional[int],
+        ignored_ports: Optional[Set[int]] = None
+    ):
+        if self._port_scan_stop is not stop_event:
+            self._dismiss_port_progress()
+            return
+        self._port_scan_stop = None
+        self._port_scan_thread = None
+        self._port_scan_target = None
+        if self._manual_port_mode:
+            self._dismiss_port_progress()
+            return
+        self._dismiss_port_progress()
+        if self.selected_device_key != target_key:
+            self._port_scan_total = 0
+            return
+        if port and ignored_ports and port in ignored_ports:
+            port = None
+        if port:
+            if not self.conport_var.get().strip():
+                self.conport_var.set(str(port))
+            self.status_label.config(text=f"Detected wireless debugging port {port}. Enter the pairing code to continue.")
+        else:
+            self.status_label.config(text="Unable to detect the wireless debugging port. Enter it manually from your Peloton screen.")
+        self._port_scan_total = 0
 
 class UsbDebugGuide:
     def __init__(self, parent):
