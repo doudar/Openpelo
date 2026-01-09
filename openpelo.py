@@ -1533,7 +1533,7 @@ class WirelessPairingDialog:
                     if not connect_service and pairing_service and '_adb-tls-pairing' in pairing_service:
                         base_service = pairing_service.split('._adb-tls-pairing', 1)[0]
                         if base_service:
-                            connect_service = f"{base_service}._adb-tls-connect._tcp"
+                            connect_service = f"{base_service}._adb-tls-connect._tcp.local"
                             if pairing_service.endswith('.'):
                                 connect_service += '.'
 
