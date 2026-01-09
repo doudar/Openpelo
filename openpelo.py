@@ -1330,6 +1330,8 @@ class WirelessPairingDialog:
             service_name = parts[0].strip().rstrip('.')
             address = parts[-2].strip()
             port = parts[-1].strip()
+            if not port.isdigit() or not address:
+                continue
             if '._adb-tls-' not in service_name:
                 continue
             key = service_name.split('._adb-tls-')[0]
@@ -1489,7 +1491,12 @@ class WirelessPairingDialog:
                 self.status_label.config(text="Waiting to complete connection (up to 2 minutes)...")
                 self.window.update()
 
-                connect_deadline = time.time() + 120
+                connect_timeout_seconds = 120
+                connect_deadline = time.time() + connect_timeout_seconds
+                mdns_refresh_interval = 10
+                missing_info_wait = 3
+                retry_wait = 5
+                last_mdns_refresh = 0
                 connected = False
                 last_error = ""
 
@@ -1497,13 +1504,15 @@ class WirelessPairingDialog:
                     device_info = selected_device or {}
                     if selected_device_key:
                         try:
-                            refreshed = self._discover_mdns_devices()
-                            self.discovered_devices.update(refreshed)
-                            device_info = refreshed.get(selected_device_key, device_info)
-                            if selected_device:
-                                selected_device.update(device_info)
-                        except Exception:
-                            pass
+                            if (time.time() - last_mdns_refresh) >= mdns_refresh_interval:
+                                refreshed = self._discover_mdns_devices()
+                                last_mdns_refresh = time.time()
+                                self.discovered_devices.update(refreshed)
+                                device_info = refreshed.get(selected_device_key, device_info)
+                                if selected_device:
+                                    selected_device.update(device_info)
+                        except Exception as e:
+                            last_error = str(e)
 
                     connect_service = device_info.get('connect_service')
                     pairing_service = device_info.get('pairing_service')
@@ -1519,7 +1528,7 @@ class WirelessPairingDialog:
                     elif connect_ip and connect_port:
                         connect_args.append(f'{connect_ip}:{connect_port}')
                     else:
-                        time.sleep(3)
+                        time.sleep(missing_info_wait)
                         continue
 
                     connect_result = run_adb(*connect_args, timeout=20)
@@ -1529,7 +1538,7 @@ class WirelessPairingDialog:
                         connected = True
                         break
                     last_error = connect_result.stdout + connect_result.stderr
-                    time.sleep(5)
+                    time.sleep(retry_wait)
 
                 if not connected:
                     self.status_label.config(text="Auto-connect failed!")
