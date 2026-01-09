@@ -18,6 +18,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
+logging.basicConfig(level=logging.INFO)
+
 class OpenPeloGUI:
     def __init__(self):
         self.system = platform.system().lower()
@@ -1329,20 +1331,18 @@ class WirelessPairingDialog:
         devices = {}
         unparsed = []
         for raw in (output or '').splitlines():
-            if '_adb-tls-' not in raw:
-                unparsed.append(raw)
+            if not raw or not raw.strip():
                 continue
             parts = raw.split()
             if len(parts) < 3:
                 unparsed.append(raw)
                 continue
             service_name = parts[0].strip().rstrip('.')
+            if '_adb-tls-' not in service_name:
+                continue
             address = parts[-2].strip()
             port = parts[-1].strip()
             if not port.isdigit() or not address:
-                unparsed.append(raw)
-                continue
-            if '._adb-tls-' not in service_name:
                 unparsed.append(raw)
                 continue
             key = service_name.split('._adb-tls-')[0]
@@ -1532,9 +1532,10 @@ class WirelessPairingDialog:
                     pairing_service = device_info.get('pairing_service')
                     if not connect_service and pairing_service and '_adb-tls-pairing' in pairing_service:
                         base_service = pairing_service.split('._adb-tls-pairing', 1)[0]
-                        connect_service = f"{base_service}._adb-tls-connect._tcp"
-                        if pairing_service.endswith('.'):
-                            connect_service += '.'
+                        if base_service:
+                            connect_service = f"{base_service}._adb-tls-connect._tcp"
+                            if pairing_service.endswith('.'):
+                                connect_service += '.'
 
                     connect_ip = device_info.get('connect_ip') or device_info.get('pairing_ip') or ip
                     connect_port = device_info.get('connect_port') or device_info.get('pairing_port') or conport
