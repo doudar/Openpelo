@@ -9,6 +9,7 @@ import subprocess
 import certifi
 import ssl
 import threading
+import time
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -1187,8 +1188,23 @@ class WirelessPairingDialog:
         self.app = app  # Main app reference for immediate UI update
         self.window = tk.Toplevel(parent)
         self.window.title("Wireless Pairing")
-        self.window.geometry("400x400")
+        self.window.geometry("520x520")
         self.window.resizable(False, False)
+        
+        if self.app:
+            self._run_adb = lambda *args, **kwargs: self.app.adb_run(*args, **kwargs)
+        else:
+            def _runner(*args, **kwargs):
+                params = (self.subprocess_kwargs or {}).copy()
+                params.setdefault('capture_output', True)
+                params.setdefault('text', True)
+                params.update(kwargs)
+                return subprocess.run([str(self.adb_path), *args], **params)
+            self._run_adb = _runner
+        
+        self.discovered_devices = {}
+        self.device_index_map = []
+        self.selected_device_key = None
         
         self.setup_gui()
     
@@ -1205,12 +1221,38 @@ class WirelessPairingDialog:
         # Info text
         info_label = ttk.Label(
             self.window,
-            text="Enter the information shown on your Peloton's wireless debugging pairing dialog. \n \n The last port is on the main wireless debugging screen, not the pairing dialog. (look left, it's greyed out.) ",
+            text="Select your Peloton from the scan results and enter the pairing code shown on the wireless debugging screen. No IP/port needed when a device is selected.",
             wraplength=360,
             justify='center',
             padding=(0, 10)
         )
         info_label.pack(fill='x', padx=20)
+
+        devices_frame = ttk.LabelFrame(self.window, text="Discovered Devices")
+        devices_frame.pack(fill='both', expand=False, padx=20, pady=(0, 10))
+
+        controls_frame = ttk.Frame(devices_frame)
+        controls_frame.pack(fill='x', padx=5, pady=(5, 0))
+
+        self.scan_btn = ttk.Button(
+            controls_frame,
+            text="Scan for devices",
+            command=self.scan_for_devices
+        )
+        self.scan_btn.pack(side='right')
+
+        self.devices_list = tk.Listbox(devices_frame, height=5, activestyle='dotbox')
+        self.devices_list.pack(fill='both', expand=True, padx=5, pady=5)
+        self.devices_list.bind('<<ListboxSelect>>', self.on_device_select)
+
+        self.no_devices_label = ttk.Label(
+            devices_frame,
+            text="No devices found yet. Open the wireless debugging pairing screen on your Peloton, then click Scan.",
+            style='Status.TLabel',
+            wraplength=440,
+            justify='center'
+        )
+        self.no_devices_label.pack(fill='x', padx=5, pady=(0, 5))
         
         # Input fields frame
         input_frame = ttk.Frame(self.window)
@@ -1276,10 +1318,115 @@ class WirelessPairingDialog:
         self.port_var.trace('w', self.check_fields)
         self.code_var.trace('w', self.check_fields)
         self.conport_var.trace('w', self.check_fields)
+
+    def _parse_mdns_services(self, output: str):
+        devices = {}
+        for raw in (output or '').splitlines():
+            if '_adb-tls-' not in raw:
+                continue
+            parts = raw.split()
+            if len(parts) < 3:
+                continue
+            service_name = parts[0].strip().rstrip('.')
+            address = parts[-2].strip()
+            port = parts[-1].strip()
+            if '._adb-tls-' not in service_name:
+                continue
+            key = service_name.split('._adb-tls-')[0]
+            entry = devices.setdefault(key, {'name': key})
+            if '_adb-tls-pairing' in service_name:
+                entry.update({
+                    'pairing_service': service_name,
+                    'pairing_ip': address,
+                    'pairing_port': port
+                })
+            elif '_adb-tls-connect' in service_name:
+                entry.update({
+                    'connect_service': service_name,
+                    'connect_ip': address,
+                    'connect_port': port
+                })
+        return devices
+
+    def _discover_mdns_devices(self):
+        result = self._run_adb('mdns', 'services', timeout=10)
+        return self._parse_mdns_services(result.stdout)
+
+    def _format_device_display(self, key, info):
+        address = info.get('pairing_ip') or info.get('connect_ip') or 'Unknown IP'
+        pairing_port = info.get('pairing_port')
+        suffix = f":{pairing_port}" if pairing_port else ""
+        return f"{key} ({address}{suffix})"
+
+    def scan_for_devices(self):
+        """Scan the local network for wireless debugging devices using adb mdns."""
+        try:
+            self.scan_btn.config(state='disabled')
+        except Exception:
+            pass
+        self.status_label.config(text="Scanning for devices...")
+
+        def worker():
+            devices = {}
+            error = None
+            try:
+                devices = self._discover_mdns_devices()
+            except Exception as e:
+                error = str(e)
+
+            def update_ui():
+                self.discovered_devices = devices
+                self.device_index_map = []
+                self.devices_list.delete(0, tk.END)
+                for key, info in devices.items():
+                    self.device_index_map.append(key)
+                    self.devices_list.insert(tk.END, self._format_device_display(key, info))
+                if devices:
+                    self.no_devices_label.config(
+                        text="Select a device from the list, then enter the pairing code to connect."
+                    )
+                else:
+                    self.no_devices_label.config(
+                        text="No devices found yet. Open the wireless debugging pairing screen on your Peloton, then click Scan."
+                    )
+                    self.selected_device_key = None
+                if error:
+                    messagebox.showerror("Scan Failed", f"Failed to scan for devices:\n{error}")
+                try:
+                    self.scan_btn.config(state='normal')
+                except Exception:
+                    pass
+                self.status_label.config(text="")
+                self.check_fields()
+
+            self.window.after(0, update_ui)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_device_select(self, event=None):
+        selection = self.devices_list.curselection()
+        if not selection:
+            self.selected_device_key = None
+            self.check_fields()
+            return
+        index = selection[0]
+        if index >= len(self.device_index_map):
+            return
+        key = self.device_index_map[index]
+        self.selected_device_key = key
+        device = self.discovered_devices.get(key, {})
+        self.ip_var.set(device.get('pairing_ip', device.get('connect_ip', '')))
+        self.port_var.set(device.get('pairing_port', ''))
+        self.conport_var.set(device.get('connect_port', device.get('pairing_port', '')))
+        self.status_label.config(text=f"Selected {key}. Enter the pairing code to continue.")
+        self.check_fields()
     
     def check_fields(self, *args):
         """Enable connect button when all fields are filled"""
-        if self.ip_var.get() and self.port_var.get() and self.code_var.get() and self.conport_var.get():
+        code = self.code_var.get().strip()
+        manual_ready = self.ip_var.get().strip() and self.port_var.get().strip() and self.conport_var.get().strip()
+        has_device = self.selected_device_key is not None
+        if code and (manual_ready or has_device):
             self.connect_btn.config(state='normal')
         else:
             self.connect_btn.config(state='disabled')
@@ -1290,9 +1437,17 @@ class WirelessPairingDialog:
         port = self.port_var.get().strip()
         code = self.code_var.get().strip()
         conport = self.conport_var.get().strip()
+        selected_device_key = self.selected_device_key
+        selected_device = self.discovered_devices.get(selected_device_key) if selected_device_key else None
 
-        if not ip or not port or not code or not conport:
-            messagebox.showerror("Error", "Please fill in all fields")
+        if not code:
+            messagebox.showerror("Error", "Please enter the pairing code.")
+            return
+        if not selected_device and (not ip or not port or not conport):
+            messagebox.showerror(
+                "Error",
+                "Select a device from the scan list or enter the IP/ports manually."
+            )
             return
         
         # Disable buttons during connection
@@ -1301,23 +1456,23 @@ class WirelessPairingDialog:
         
         def connect():
             try:
-                if self.app:
-                    def run_adb(*args, **kwargs):
-                        return self.app.adb_run(*args, **kwargs)
-                else:
-                    def run_adb(*args, **kwargs):
-                        params = (self.subprocess_kwargs or {}).copy()
-                        params.setdefault('capture_output', True)
-                        params.setdefault('text', True)
-                        params.update(kwargs)
-                        return subprocess.run([str(self.adb_path), *args], **params)
+                run_adb = self._run_adb
 
                 # Step 1: Pair with the device
                 self.status_label.config(text="Pairing with device...")
                 self.window.update()
-                
-                pair_result = run_adb('pair', f'{ip}:{port}', code, timeout=30)
-                
+
+                pair_args = ['pair']
+                if selected_device and selected_device.get('pairing_service'):
+                    pair_args.append(f"--mdns-service={selected_device['pairing_service']}")
+                elif selected_device and selected_device.get('pairing_ip') and selected_device.get('pairing_port'):
+                    pair_args.append(f"{selected_device['pairing_ip']}:{selected_device['pairing_port']}")
+                else:
+                    pair_args.append(f'{ip}:{port}')
+                pair_args.append(code)
+
+                pair_result = run_adb(*pair_args, timeout=90)
+
                 if pair_result.returncode != 0 or 'Failed' in pair_result.stdout or 'failed' in pair_result.stderr:
                     error_msg = pair_result.stdout + pair_result.stderr
                     self.status_label.config(text="Pairing failed!")
@@ -1330,48 +1485,63 @@ class WirelessPairingDialog:
                     return
                 
                 # Step 2: Connect to the device
-                # After pairing, we need to connect. The connection port is shown on the main
-                # wireless debugging screen (not the pairing dialog). Try common ports.
-                self.status_label.config(text="Connecting to device...")
+                # After pairing, allow time for the device to expose the connect service.
+                self.status_label.config(text="Waiting to complete connection (up to 2 minutes)...")
                 self.window.update()
-                
-                # Try to find the device's connection port by checking adb devices
-                # After pairing, the device should show up
-                devices_result = run_adb('devices', timeout=10)
-                
-                # Check if device is already connected after pairing
-                if 'device' in devices_result.stdout and ip in devices_result.stdout:
-                    # Device is already connected after pairing
-                    self.status_label.config(text="Successfully connected!")
-                    messagebox.showinfo(
-                        "Success",
-                        f"Successfully connected to device via WiFi!\n\nYou can now use OpenPelo wirelessly."
-                    )
-                    # Trigger immediate main window refresh
-                    if self.app:
-                        self.app.check_device_connection()
-                    self.window.destroy()
-                    return
-                
-                # Try common wireless debugging ports
+
+                connect_deadline = time.time() + 120
                 connected = False
-                
-                connect_result = run_adb('connect', f'{ip}:{conport}', timeout=10)
-                        
-                if connect_result.returncode == 0 and 'connected' in connect_result.stdout.lower():
-                    connected = True
-                            
-                
+                last_error = ""
+
+                while time.time() < connect_deadline and not connected:
+                    device_info = selected_device or {}
+                    if selected_device_key:
+                        try:
+                            refreshed = self._discover_mdns_devices()
+                            self.discovered_devices.update(refreshed)
+                            device_info = refreshed.get(selected_device_key, device_info)
+                            if selected_device:
+                                selected_device.update(device_info)
+                        except Exception:
+                            pass
+
+                    connect_service = device_info.get('connect_service')
+                    pairing_service = device_info.get('pairing_service')
+                    if not connect_service and pairing_service and '_adb-tls-pairing' in pairing_service:
+                        connect_service = pairing_service.replace('_adb-tls-pairing', '_adb-tls-connect')
+
+                    connect_ip = device_info.get('connect_ip') or device_info.get('pairing_ip') or ip
+                    connect_port = device_info.get('connect_port') or device_info.get('pairing_port') or conport
+
+                    connect_args = ['connect']
+                    if connect_service:
+                        connect_args.append(f'--mdns-service={connect_service}')
+                    elif connect_ip and connect_port:
+                        connect_args.append(f'{connect_ip}:{connect_port}')
+                    else:
+                        time.sleep(3)
+                        continue
+
+                    connect_result = run_adb(*connect_args, timeout=20)
+                    if connect_result.returncode == 0 and (
+                        'connected' in connect_result.stdout.lower() or 'already' in connect_result.stdout.lower()
+                    ):
+                        connected = True
+                        break
+                    last_error = connect_result.stdout + connect_result.stderr
+                    time.sleep(5)
+
                 if not connected:
                     self.status_label.config(text="Auto-connect failed!")
                     messagebox.showwarning(
                         "Connection Info Needed",
-                        "Automatic connection failed. Please check the main wireless debugging screen on your Peloton for the connection IP and port (different from the pairing port), then try using 'adb connect IP:PORT' manually or restart OpenPelo and try again."
+                        "Automatic connection failed. Please make sure wireless debugging is open on your Peloton and try again.\n\n"
+                        f"{last_error}"
                     )
                     self.connect_btn.config(state='normal')
                     self.cancel_btn.config(state='normal')
                     return
-                
+
                 # Success
                 self.status_label.config(text="Successfully connected!")
                 messagebox.showinfo(
@@ -1404,6 +1574,10 @@ class WirelessPairingDialog:
         thread.start()
     
     def show(self):
+        try:
+            self.scan_for_devices()
+        except Exception:
+            pass
         self.window.grab_set()  # Make window modal
         self.window.focus_set()
 
