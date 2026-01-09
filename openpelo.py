@@ -1184,10 +1184,20 @@ class WirelessAdbGuide:
         self.window.focus_set()
 
 class WirelessPairingDialog:
+    # Allow up to two minutes for devices to expose the connect service after pairing
     CONNECT_WAIT_SECONDS = 120
+    # Minimum interval between mdns refresh attempts while waiting
     MDNS_REFRESH_INTERVAL = 10
+    # Short pause when waiting for missing connection info
     MISSING_INFO_WAIT = 3
+    # Pause between connection retry attempts
     CONNECT_RETRY_WAIT = 5
+    # Timeout for adb mdns discovery calls
+    MDNS_DISCOVERY_TIMEOUT = 10
+    # Timeout for adb pair command
+    PAIR_TIMEOUT_SECONDS = 90
+    # Timeout for adb connect command
+    CONNECT_COMMAND_TIMEOUT = 20
 
     def __init__(self, parent, adb_path, subprocess_kwargs, app=None):
         self.parent = parent
@@ -1364,12 +1374,23 @@ class WirelessPairingDialog:
                     'connect_port': port
                 })
         if unparsed:
-            logging.warning("Unparsed adb mdns lines: %s", unparsed)
+            logging.warning("Unparsed adb mdns lines encountered: %d", len(unparsed))
         return devices
 
     def _discover_mdns_devices(self):
-        result = self._run_adb('mdns', 'services', timeout=10)
+        result = self._run_adb('mdns', 'services', timeout=self.MDNS_DISCOVERY_TIMEOUT)
         return self._parse_mdns_services(result.stdout)
+
+    def _build_connect_service_name(self, pairing_service: Optional[str]) -> Optional[str]:
+        if not pairing_service or '_adb-tls-pairing' not in pairing_service:
+            return None
+        base_service = pairing_service.split('._adb-tls-pairing', 1)[0]
+        if not base_service:
+            return None
+        connect_service = f"{base_service}._adb-tls-connect._tcp.local"
+        if pairing_service.endswith('.'):
+            connect_service += '.'
+        return connect_service
 
     def _format_device_display(self, key, info):
         address = info.get('pairing_ip') or info.get('connect_ip') or 'Unknown IP'
@@ -1490,7 +1511,7 @@ class WirelessPairingDialog:
                     pair_args.append(f'{ip}:{port}')
                 pair_args.append(code)
 
-                pair_result = run_adb(*pair_args, timeout=90)
+                pair_result = run_adb(*pair_args, timeout=self.PAIR_TIMEOUT_SECONDS)
 
                 if pair_result.returncode != 0 or 'Failed' in pair_result.stdout or 'failed' in pair_result.stderr:
                     error_msg = "\n".join(filter(None, [pair_result.stdout, pair_result.stderr]))
@@ -1535,13 +1556,8 @@ class WirelessPairingDialog:
                         selected_device = device_info
 
                     connect_service = device_info.get('connect_service')
-                    pairing_service = device_info.get('pairing_service')
-                    if not connect_service and pairing_service and '_adb-tls-pairing' in pairing_service:
-                        base_service = pairing_service.split('._adb-tls-pairing', 1)[0]
-                        if base_service:
-                            connect_service = f"{base_service}._adb-tls-connect._tcp.local"
-                            if pairing_service.endswith('.'):
-                                connect_service += '.'
+                    if not connect_service:
+                        connect_service = self._build_connect_service_name(device_info.get('pairing_service'))
                     if connect_service and not any(
                         entry.get('connect_service') == connect_service
                         for entry in self.discovered_devices.values()
@@ -1560,7 +1576,7 @@ class WirelessPairingDialog:
                         time.sleep(missing_info_wait)
                         continue
 
-                    connect_result = run_adb(*connect_args, timeout=20)
+                    connect_result = run_adb(*connect_args, timeout=self.CONNECT_COMMAND_TIMEOUT)
                     if connect_result.returncode == 0 and (
                         'connected' in connect_result.stdout.lower() or 'already' in connect_result.stdout.lower()
                     ):
