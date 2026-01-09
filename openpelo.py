@@ -1181,6 +1181,11 @@ class WirelessAdbGuide:
         self.window.focus_set()
 
 class WirelessPairingDialog:
+    CONNECT_WAIT_SECONDS = 120
+    MDNS_REFRESH_INTERVAL = 10
+    MISSING_INFO_WAIT = 3
+    CONNECT_RETRY_WAIT = 5
+
     def __init__(self, parent, adb_path, subprocess_kwargs, app=None):
         self.parent = parent
         self.adb_path = adb_path
@@ -1476,7 +1481,7 @@ class WirelessPairingDialog:
                 pair_result = run_adb(*pair_args, timeout=90)
 
                 if pair_result.returncode != 0 or 'Failed' in pair_result.stdout or 'failed' in pair_result.stderr:
-                    error_msg = pair_result.stdout + pair_result.stderr
+                    error_msg = (pair_result.stdout or '') + (pair_result.stderr or '')
                     self.status_label.config(text="Pairing failed!")
                     messagebox.showerror(
                         "Pairing Failed",
@@ -1491,18 +1496,21 @@ class WirelessPairingDialog:
                 self.status_label.config(text="Waiting to complete connection (up to 2 minutes)...")
                 self.window.update()
 
-                connect_timeout_seconds = 120
+                connect_timeout_seconds = self.CONNECT_WAIT_SECONDS
                 connect_deadline = time.time() + connect_timeout_seconds
-                mdns_refresh_interval = 10
-                missing_info_wait = 3
-                retry_wait = 5
+                mdns_refresh_interval = self.MDNS_REFRESH_INTERVAL
+                missing_info_wait = self.MISSING_INFO_WAIT
+                retry_wait = self.CONNECT_RETRY_WAIT
                 last_mdns_refresh = 0
                 connected = False
                 last_error = ""
 
                 while time.time() < connect_deadline and not connected:
                     device_info = selected_device or {}
-                    if selected_device_key:
+                    needs_refresh = selected_device_key and (
+                        not device_info.get('connect_service') or not device_info.get('connect_ip')
+                    )
+                    if needs_refresh:
                         try:
                             if (time.time() - last_mdns_refresh) >= mdns_refresh_interval:
                                 refreshed = self._discover_mdns_devices()
@@ -1537,7 +1545,7 @@ class WirelessPairingDialog:
                     ):
                         connected = True
                         break
-                    last_error = connect_result.stdout + connect_result.stderr
+                    last_error = (connect_result.stdout or '') + (connect_result.stderr or '')
                     time.sleep(retry_wait)
 
                 if not connected:
