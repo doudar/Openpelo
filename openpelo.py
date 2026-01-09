@@ -1230,7 +1230,7 @@ class WirelessPairingDialog:
         info_label = ttk.Label(
             self.window,
             text="Select your Peloton from the scan results and enter the pairing code shown on the wireless debugging screen. No IP/port needed when a device is selected.",
-            wraplength=360,
+            wraplength=480,
             justify='center',
             padding=(0, 10)
         )
@@ -1340,12 +1340,16 @@ class WirelessPairingDialog:
             service_name = parts[0].strip().rstrip('.')
             if '_adb-tls-' not in service_name:
                 continue
+            base_parts = service_name.split('._adb-tls-', 1)
+            if len(base_parts) < 2 or not base_parts[0]:
+                unparsed.append(raw)
+                continue
             address = parts[-2].strip()
             port = parts[-1].strip()
             if not port.isdigit() or not address:
                 unparsed.append(raw)
                 continue
-            key = service_name.split('._adb-tls-')[0]
+            key = base_parts[0]
             entry = devices.setdefault(key, {'name': key})
             if '_adb-tls-pairing' in service_name:
                 entry.update({
@@ -1527,6 +1531,8 @@ class WirelessPairingDialog:
                                 device_info = {**device_info, **refreshed.get(selected_device_key, {})}
                         except Exception as e:
                             last_error = str(e)
+                    if selected_device_key:
+                        selected_device = device_info
 
                     connect_service = device_info.get('connect_service')
                     pairing_service = device_info.get('pairing_service')
@@ -1536,9 +1542,14 @@ class WirelessPairingDialog:
                             connect_service = f"{base_service}._adb-tls-connect._tcp.local"
                             if pairing_service.endswith('.'):
                                 connect_service += '.'
+                    if connect_service and not any(
+                        entry.get('connect_service') == connect_service
+                        for entry in self.discovered_devices.values()
+                    ):
+                        connect_service = None
 
                     connect_ip = device_info.get('connect_ip') or device_info.get('pairing_ip') or ip
-                    connect_port = device_info.get('connect_port') or device_info.get('pairing_port') or conport
+                    connect_port = device_info.get('connect_port') or conport
 
                     connect_args = ['connect']
                     if connect_service:
