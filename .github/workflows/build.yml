@@ -25,31 +25,18 @@ jobs:
       
       - name: Bump version and push tag
         run: |
-          # Read current version
           VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
-          
-          # Split version into components
           IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
           MAJOR="${VERSION_PARTS[0]}"
           MINOR="${VERSION_PARTS[1]}"
           PATCH="${VERSION_PARTS[2]}"
-          
-          # Increment patch version
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
-          # Update version.json
           echo "{\"version\": \"$NEW_VERSION\"}" > version.json
-          
-          # Configure Git
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
-          # Commit version update
           git add version.json
           git commit -m "Bump version to $NEW_VERSION"
-          
-          # Create and push tag
           git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
           git push origin main --tags
           git push
@@ -172,23 +159,34 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-          # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # Import certificate and provision profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
     
-    - name: Build executable
+    - name: Create macOS Icon
+      run: |
+        mkdir OpenPelo.iconset
+        # Create standard icon sizes from the source PNG
+        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
+        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
+        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
+        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
+        # Convert the iconset folder to a single .icns file
+        iconutil -c icns OpenPelo.iconset
+        # Result is now saved as 'Icon.icns' in the root
+
+    - name: Build App Bundle
       run: |
         python -m nuitka \
           --standalone \
@@ -201,22 +199,26 @@ jobs:
           --include-data-dir=ADB=ADB \
           --macos-disable-console \
           --include-data-dir=platform-tools=platform-tools \
-          --output-filename=OpenPelo \
           --output-dir=build/macos-arm \
           --remove-output \
+          --macos-create-app-bundle \
+          --macos-app-name=OpenPelo \
+          --macos-bundle-identifier=com.doudar.openpelo \
+          --macos-app-icon=Icon.icns \
           openpelo.py
-        chmod +x build/macos-arm/OpenPelo
+        
+        # Move the created .app bundle to dist
         mkdir -p dist
-        cp build/macos-arm/OpenPelo dist/OpenPelo
+        cp -R build/macos-arm/OpenPelo.app dist/OpenPelo.app
     
-    - name: Sign Executable
+    - name: Sign App Bundle
       run: |
-        codesign --force --verbose --timestamp --options runtime --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo
+        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
 
-    - name: Package executable
+    - name: Package App
       run: |
         cd dist
-        zip OpenPelo-macOS-ARM.zip OpenPelo
+        zip -r OpenPelo-macOS-ARM.zip OpenPelo.app
         cd ..
 
     - name: Notarize Build
@@ -262,23 +264,31 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-          # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # Import certificate and provision profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
     
-    - name: Build executable
+    - name: Create macOS Icon
+      run: |
+        mkdir OpenPelo.iconset
+        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
+        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
+        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
+        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
+        iconutil -c icns OpenPelo.iconset
+
+    - name: Build App Bundle
       run: |
         arch -x86_64 python -m nuitka \
           --standalone \
@@ -291,22 +301,26 @@ jobs:
           --include-data-dir=ADB=ADB \
           --include-data-dir=platform-tools=platform-tools \
           --macos-disable-console \
-          --output-filename=OpenPelo \
           --output-dir=build/macos-intel \
           --remove-output \
+          --macos-create-app-bundle \
+          --macos-app-name=OpenPelo \
+          --macos-bundle-identifier=com.doudar.openpelo \
+          --macos-app-icon=Icon.icns \
           openpelo.py
-        chmod +x build/macos-intel/OpenPelo
+        
+        # Move the created .app bundle to dist
         mkdir -p dist
-        cp build/macos-intel/OpenPelo dist/OpenPelo
+        cp -R build/macos-intel/OpenPelo.app dist/OpenPelo.app
 
-    - name: Sign Executable
+    - name: Sign App Bundle
       run: |
-        codesign --force --verbose --timestamp --options runtime --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo
+        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
     
-    - name: Package executable
+    - name: Package App
       run: |
         cd dist
-        zip OpenPelo-macOS-Intel.zip OpenPelo
+        zip -r OpenPelo-macOS-Intel.zip OpenPelo.app
         cd ..
 
     - name: Notarize Build
@@ -347,37 +361,37 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
       run: |
-          # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # Import certificate and provision profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-    - name: Create and Sign universal binary
+    - name: Create and Sign universal bundle
       run: |
+        # Unzip both archives
         unzip arm/OpenPelo-macOS-ARM.zip -d arm_extracted
         unzip intel/OpenPelo-macOS-Intel.zip -d intel_extracted
         mkdir -p dist
         
-        # Combine the two binaries
-        lipo -create arm_extracted/OpenPelo intel_extracted/OpenPelo -output dist/OpenPelo
+        # 1. Copy the ARM app bundle (which now has the correct Icon.icns inside)
+        cp -R arm_extracted/OpenPelo.app dist/OpenPelo.app
         
-        # Sign the new universal binary
-        codesign --force --verbose --timestamp --options runtime --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo
+        # 2. Merge binaries
+        lipo -create \
+          arm_extracted/OpenPelo.app/Contents/MacOS/OpenPelo \
+          intel_extracted/OpenPelo.app/Contents/MacOS/OpenPelo \
+          -output dist/OpenPelo.app/Contents/MacOS/OpenPelo
         
-        # Zip it for distribution
+        # 3. Sign the new universal app bundle
+        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
+        
+        # 4. Zip it
         cd dist
-        zip OpenPelo-macOS-universal.zip OpenPelo
+        zip -r OpenPelo-macOS-universal.zip OpenPelo.app
         cd ..
 
     - name: Notarize Build
