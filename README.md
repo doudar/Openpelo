@@ -234,6 +234,12 @@ If you need to create a build outside of GitHub Actions:
 
 This installer only downloads apps from trusted sources specified in the configuration file. However, users should always be cautious when installing third-party applications on their devices.
 
+## Disclaimer
+
+OpenPelo is an independent, open-source project and is not affiliated with, associated with, authorized by, endorsed by, or in any way officially connected with Peloton Interactive, Inc., or any of its subsidiaries or affiliates. The official Peloton website can be found at [https://www.onepeloton.com](https://www.onepeloton.com).
+
+The name "Peloton" as well as related names, marks, emblems, and images are registered trademarks of their respective owners. This tool is provided for educational and experimental purposes only. Use of OpenPelo is at your own risk; the developers assume no liability for any damage to your device, voiding of warranties, or other issues that may result from its use.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
