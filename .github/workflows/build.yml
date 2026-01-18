@@ -201,21 +201,21 @@ jobs:
           --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
           --include-data-dir=ADB=ADB \
-          --macos-disable-console \
           --include-data-dir=platform-tools=platform-tools \
           --output-dir=build/macos-arm \
           --remove-output \
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
           --macos-app-icon=Icon.icns \
-          --output-filename=OpenPelo \
           openpelo.py
         
         # Move to dist for further processing
         mkdir -p dist
-        cp -R build/macos-arm/OpenPelo.app dist/OpenPelo.app
+        # Nuitka might create 'openpelo.app' (lowercase), so we use a wildcard match
+        # to correctly move it to the capitalized 'OpenPelo.app' destination.
+        cp -R build/macos-arm/*.app dist/OpenPelo.app
         
-        # Manually set the Bundle Identifier since Nuitka flag is missing
+        # Manually set the Bundle Identifier
         plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
 
     - name: Sign App Bundle
@@ -340,20 +340,19 @@ jobs:
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
           --include-data-dir=ADB=ADB \
           --include-data-dir=platform-tools=platform-tools \
-          --macos-disable-console \
           --output-dir=build/macos-intel \
           --remove-output \
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
           --macos-app-icon=Icon.icns \
-          --output-filename=OpenPelo \
           openpelo.py
         
         # Move to dist for further processing
         mkdir -p dist
-        cp -R build/macos-intel/OpenPelo.app dist/OpenPelo.app
+        # Handle lowercase output from Nuitka
+        cp -R build/macos-intel/*.app dist/OpenPelo.app
         
-        # Manually set the Bundle Identifier since Nuitka flag is missing
+        # Manually set the Bundle Identifier
         plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
 
     - name: Sign App Bundle
