@@ -195,6 +195,7 @@ jobs:
           --standalone \
           --onefile \
           --enable-plugin=tk-inter \
+          --assume-yes-for-downloads \
           --include-package=certifi \
           --include-data-file=apps_config.json=apps_config.json \
           --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
@@ -207,6 +208,7 @@ jobs:
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
           --macos-app-icon=Icon.icns \
+          --output-filename=OpenPelo \
           openpelo.py
         
         # Move to dist for further processing
@@ -331,6 +333,7 @@ jobs:
           --standalone \
           --onefile \
           --enable-plugin=tk-inter \
+          --assume-yes-for-downloads \
           --include-package=certifi \
           --include-data-file=apps_config.json=apps_config.json \
           --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
@@ -343,6 +346,7 @@ jobs:
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
           --macos-app-icon=Icon.icns \
+          --output-filename=OpenPelo \
           openpelo.py
         
         # Move to dist for further processing
