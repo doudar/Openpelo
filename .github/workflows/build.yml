@@ -211,9 +211,16 @@ jobs:
         
         # Move to dist for further processing
         mkdir -p dist
-        # Nuitka might create 'openpelo.app' (lowercase), so we use a wildcard match
-        # to correctly move it to the capitalized 'OpenPelo.app' destination.
-        cp -R build/macos-arm/*.app dist/OpenPelo.app
+        
+        # Find the generated app bundle name (likely openpelo.app) and move/rename it
+        APP_BUNDLE=$(find build/macos-arm -maxdepth 1 -name "*.app" | head -n 1)
+        echo "Found generated bundle: $APP_BUNDLE"
+        
+        # Rename and move to dist/OpenPelo.app
+        mv "$APP_BUNDLE" dist/OpenPelo.app
+        
+        # Verify info.plist exists before trying to modify it
+        ls -l dist/OpenPelo.app/Contents/Info.plist
         
         # Manually set the Bundle Identifier
         plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
@@ -340,6 +347,7 @@ jobs:
           --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
           --include-data-dir=ADB=ADB \
           --include-data-dir=platform-tools=platform-tools \
+          --macos-disable-console \
           --output-dir=build/macos-intel \
           --remove-output \
           --macos-create-app-bundle \
@@ -349,8 +357,15 @@ jobs:
         
         # Move to dist for further processing
         mkdir -p dist
-        # Handle lowercase output from Nuitka
-        cp -R build/macos-intel/*.app dist/OpenPelo.app
+        
+        # Find and move the generated bundle
+        APP_BUNDLE=$(find build/macos-intel -maxdepth 1 -name "*.app" | head -n 1)
+        echo "Found generated bundle: $APP_BUNDLE"
+        
+        mv "$APP_BUNDLE" dist/OpenPelo.app
+        
+        # Verify
+        ls -l dist/OpenPelo.app/Contents/Info.plist
         
         # Manually set the Bundle Identifier
         plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
