@@ -32,11 +32,15 @@ jobs:
           PATCH="${VERSION_PARTS[2]}"
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
           echo "{\"version\": \"$NEW_VERSION\"}" > version.json
+          
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          
           git add version.json
           git commit -m "Bump version to $NEW_VERSION"
+          
           git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
           git push origin main --tags
           git push
@@ -151,6 +155,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install nuitka zstandard certifi pillow
+        brew install create-dmg
 
     - name: Install Apple Certificate
       if: runner.os == 'macOS'
@@ -171,7 +176,6 @@ jobs:
     - name: Create macOS Icon
       run: |
         mkdir OpenPelo.iconset
-        # Create standard icon sizes from the source PNG
         sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
         sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
         sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
@@ -182,9 +186,7 @@ jobs:
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
         sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        # Convert the iconset folder to a single .icns file
         iconutil -c icns OpenPelo.iconset
-        # Result is now saved as 'Icon.icns' in the root
 
     - name: Build App Bundle
       run: |
@@ -203,37 +205,69 @@ jobs:
           --remove-output \
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
-          --macos-bundle-identifier=com.doudar.openpelo \
           --macos-app-icon=Icon.icns \
           openpelo.py
         
-        # Move the created .app bundle to dist
+        # Move to dist for further processing
         mkdir -p dist
         cp -R build/macos-arm/OpenPelo.app dist/OpenPelo.app
-    
+        
+        # Manually set the Bundle Identifier since Nuitka flag is missing
+        plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
+
     - name: Sign App Bundle
       run: |
         codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
 
-    - name: Package App
+    # Zip the App Bundle for the Universal job to use later
+    - name: Prepare Intermediate Artifact
       run: |
-        cd dist
-        zip -r OpenPelo-macOS-ARM.zip OpenPelo.app
-        cd ..
+        zip -r app.zip dist/OpenPelo.app
 
-    - name: Notarize Build
+    - name: Upload Intermediate App
+      uses: actions/upload-artifact@v4
+      with:
+        name: intermediate-app-arm
+        path: app.zip
+
+    - name: Create DMG
       run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-ARM.zip \
+        mkdir dmg_source
+        cp -R dist/OpenPelo.app dmg_source/
+        
+        create-dmg \
+          --volname "OpenPelo Installer" \
+          --volicon "Icon.icns" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "OpenPelo.app" 200 190 \
+          --hide-extension "OpenPelo.app" \
+          --app-drop-link 600 185 \
+          "dist/OpenPelo-macOS-ARM.dmg" \
+          "dmg_source/"
+
+    - name: Sign DMG
+      run: |
+        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-ARM.dmg
+
+    - name: Notarize DMG
+      run: |
+        xcrun notarytool submit dist/OpenPelo-macOS-ARM.dmg \
           --apple-id "${{ secrets.AC_USERNAME }}" \
           --password "${{ secrets.AC_PASSWORD }}" \
           --team-id "${{ secrets.TEAM_ID }}" \
           --wait
+
+    - name: Staple Ticket
+      run: |
+        xcrun stapler staple dist/OpenPelo-macOS-ARM.dmg
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-macOS-ARM
-        path: dist/OpenPelo-macOS-ARM.zip
+        path: dist/OpenPelo-macOS-ARM.dmg
 
   build-macos-intel:
     needs: [bump-version]
@@ -256,6 +290,7 @@ jobs:
       run: |
         arch -x86_64 python -m pip install --upgrade pip
         arch -x86_64 python -m pip install nuitka zstandard certifi pillow
+        brew install create-dmg
 
     - name: Install Apple Certificate
       if: runner.os == 'macOS'
@@ -305,54 +340,91 @@ jobs:
           --remove-output \
           --macos-create-app-bundle \
           --macos-app-name=OpenPelo \
-          --macos-bundle-identifier=com.doudar.openpelo \
           --macos-app-icon=Icon.icns \
           openpelo.py
         
-        # Move the created .app bundle to dist
+        # Move to dist for further processing
         mkdir -p dist
         cp -R build/macos-intel/OpenPelo.app dist/OpenPelo.app
+        
+        # Manually set the Bundle Identifier since Nuitka flag is missing
+        plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
 
     - name: Sign App Bundle
       run: |
         codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
-    
-    - name: Package App
-      run: |
-        cd dist
-        zip -r OpenPelo-macOS-Intel.zip OpenPelo.app
-        cd ..
 
-    - name: Notarize Build
+    # Zip the App Bundle for the Universal job to use later
+    - name: Prepare Intermediate Artifact
       run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-Intel.zip \
+        zip -r app.zip dist/OpenPelo.app
+
+    - name: Upload Intermediate App
+      uses: actions/upload-artifact@v4
+      with:
+        name: intermediate-app-intel
+        path: app.zip
+    
+    - name: Create DMG
+      run: |
+        mkdir dmg_source
+        cp -R dist/OpenPelo.app dmg_source/
+        
+        create-dmg \
+          --volname "OpenPelo Installer" \
+          --volicon "Icon.icns" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "OpenPelo.app" 200 190 \
+          --hide-extension "OpenPelo.app" \
+          --app-drop-link 600 185 \
+          "dist/OpenPelo-macOS-Intel.dmg" \
+          "dmg_source/"
+
+    - name: Sign DMG
+      run: |
+        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-Intel.dmg
+
+    - name: Notarize DMG
+      run: |
+        xcrun notarytool submit dist/OpenPelo-macOS-Intel.dmg \
           --apple-id "${{ secrets.AC_USERNAME }}" \
           --password "${{ secrets.AC_PASSWORD }}" \
           --team-id "${{ secrets.TEAM_ID }}" \
           --wait
+
+    - name: Staple Ticket
+      run: |
+        xcrun stapler staple dist/OpenPelo-macOS-Intel.dmg
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-macOS-Intel
-        path: dist/OpenPelo-macOS-Intel.zip
+        path: dist/OpenPelo-macOS-Intel.dmg
 
   build-macos-universal:
     needs: [build-macos-arm, build-macos-intel]
     runs-on: macos-latest
     if: github.event_name == 'push' || github.event_name == 'release'
     steps:
-    - name: Download ARM artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: OpenPelo-macOS-ARM
-        path: arm
+    - uses: actions/checkout@v3
 
-    - name: Download Intel artifact
+    - name: Install create-dmg
+      run: brew install create-dmg
+
+    - name: Download ARM App
       uses: actions/download-artifact@v4
       with:
-        name: OpenPelo-macOS-Intel
-        path: intel
+        name: intermediate-app-arm
+        path: arm_temp
+
+    - name: Download Intel App
+      uses: actions/download-artifact@v4
+      with:
+        name: intermediate-app-intel
+        path: intel_temp
 
     - name: Install Apple Certificate
       if: runner.os == 'macOS'
@@ -370,43 +442,78 @@ jobs:
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+    - name: Create macOS Icon
+      run: |
+        mkdir OpenPelo.iconset
+        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
+        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
+        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
+        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
+        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
+        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
+        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
+        iconutil -c icns OpenPelo.iconset
+
     - name: Create and Sign universal bundle
       run: |
-        # Unzip both archives
-        unzip arm/OpenPelo-macOS-ARM.zip -d arm_extracted
-        unzip intel/OpenPelo-macOS-Intel.zip -d intel_extracted
+        # Unzip intermediates
+        unzip arm_temp/app.zip -d arm_extracted
+        unzip intel_temp/app.zip -d intel_extracted
         mkdir -p dist
         
-        # 1. Copy the ARM app bundle (which now has the correct Icon.icns inside)
-        cp -R arm_extracted/OpenPelo.app dist/OpenPelo.app
+        # Copy ARM app as base
+        cp -R arm_extracted/dist/OpenPelo.app dist/OpenPelo.app
         
-        # 2. Merge binaries
+        # Merge binaries
         lipo -create \
-          arm_extracted/OpenPelo.app/Contents/MacOS/OpenPelo \
-          intel_extracted/OpenPelo.app/Contents/MacOS/OpenPelo \
+          arm_extracted/dist/OpenPelo.app/Contents/MacOS/OpenPelo \
+          intel_extracted/dist/OpenPelo.app/Contents/MacOS/OpenPelo \
           -output dist/OpenPelo.app/Contents/MacOS/OpenPelo
         
-        # 3. Sign the new universal app bundle
+        # Sign App
         codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
-        
-        # 4. Zip it
-        cd dist
-        zip -r OpenPelo-macOS-universal.zip OpenPelo.app
-        cd ..
 
-    - name: Notarize Build
+    - name: Create DMG
       run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-universal.zip \
+        mkdir dmg_source
+        cp -R dist/OpenPelo.app dmg_source/
+        
+        create-dmg \
+          --volname "OpenPelo Installer" \
+          --volicon "Icon.icns" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "OpenPelo.app" 200 190 \
+          --hide-extension "OpenPelo.app" \
+          --app-drop-link 600 185 \
+          "dist/OpenPelo-macOS-universal.dmg" \
+          "dmg_source/"
+
+    - name: Sign DMG
+      run: |
+        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-universal.dmg
+
+    - name: Notarize DMG
+      run: |
+        xcrun notarytool submit dist/OpenPelo-macOS-universal.dmg \
           --apple-id "${{ secrets.AC_USERNAME }}" \
           --password "${{ secrets.AC_PASSWORD }}" \
           --team-id "${{ secrets.TEAM_ID }}" \
           --wait
 
+    - name: Staple Ticket
+      run: |
+        xcrun stapler staple dist/OpenPelo-macOS-universal.dmg
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: OpenPelo-macOS-universal
-        path: dist/OpenPelo-macOS-universal.zip
+        path: dist/OpenPelo-macOS-universal.dmg
 
   create-release:
     needs: [build-windows, build-linux, build-macos-arm, build-macos-intel, build-macos-universal]
@@ -433,6 +540,6 @@ jobs:
         files: |
           OpenPelo-Windows/OpenPelo.exe
           OpenPelo-Linux/OpenPelo-linux.tar.gz
-          OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.zip
-          OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.zip
-          OpenPelo-macOS-universal/OpenPelo-macOS-universal.zip
+          OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.dmg
+          OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.dmg
+          OpenPelo-macOS-universal/OpenPelo-macOS-universal.dmg
