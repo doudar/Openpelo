@@ -186,7 +186,8 @@ jobs:
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
         sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        iconutil -c icns OpenPelo.iconset
+        # Explicitly output to Icon.icns
+        iconutil -c icns OpenPelo.iconset -o Icon.icns
 
     - name: Build App Bundle
       run: |
@@ -321,7 +322,8 @@ jobs:
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
         sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        iconutil -c icns OpenPelo.iconset
+        # Explicitly output to Icon.icns
+        iconutil -c icns OpenPelo.iconset -o Icon.icns
 
     - name: Build App Bundle
       run: |
@@ -455,7 +457,8 @@ jobs:
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
         sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
         sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        iconutil -c icns OpenPelo.iconset
+        # Explicitly output to Icon.icns
+        iconutil -c icns OpenPelo.iconset -o Icon.icns
 
     - name: Create and Sign universal bundle
       run: |
