@@ -212,18 +212,56 @@ jobs:
         # Move to dist for further processing
         mkdir -p dist
         
-        # Find the generated app bundle name (likely openpelo.app) and move/rename it
+        # DEBUG: List build directory to see what Nuitka created
+        echo "Listing build directory:"
+        ls -R build/macos-arm
+        
+        # Find the generated app bundle (likely lowercase openpelo.app)
         APP_BUNDLE=$(find build/macos-arm -maxdepth 1 -name "*.app" | head -n 1)
         echo "Found generated bundle: $APP_BUNDLE"
         
-        # Rename and move to dist/OpenPelo.app
-        mv "$APP_BUNDLE" dist/OpenPelo.app
+        # Copy to dist/OpenPelo.app (Capitalized)
+        cp -R "$APP_BUNDLE" dist/OpenPelo.app
         
-        # Verify info.plist exists before trying to modify it
+        # Safety Check: Generate Info.plist if Nuitka failed to create it
+        if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
+            echo "Info.plist missing, creating basic one..."
+            mkdir -p dist/OpenPelo.app/Contents
+            cat > dist/OpenPelo.app/Contents/Info.plist <<EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>openpelo</string>
+            <key>CFBundleIconFile</key>
+            <string>Icon.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.doudar.openpelo</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>OpenPelo</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.13.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+        </dict>
+        </plist>
+        EOF
+        else
+            echo "Info.plist exists, updating identifiers..."
+            plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
+            # Ensure the plist points to the lowercase binary 'openpelo' that Nuitka creates
+            plutil -replace CFBundleExecutable -string "openpelo" dist/OpenPelo.app/Contents/Info.plist
+        fi
+        
+        # DEBUG: Verify Info.plist exists now
         ls -l dist/OpenPelo.app/Contents/Info.plist
-        
-        # Manually set the Bundle Identifier
-        plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
 
     - name: Sign App Bundle
       run: |
@@ -358,17 +396,49 @@ jobs:
         # Move to dist for further processing
         mkdir -p dist
         
-        # Find and move the generated bundle
+        # Find the generated app bundle (likely lowercase openpelo.app)
         APP_BUNDLE=$(find build/macos-intel -maxdepth 1 -name "*.app" | head -n 1)
         echo "Found generated bundle: $APP_BUNDLE"
         
-        mv "$APP_BUNDLE" dist/OpenPelo.app
+        # Copy to dist/OpenPelo.app (Capitalized)
+        cp -R "$APP_BUNDLE" dist/OpenPelo.app
         
-        # Verify
-        ls -l dist/OpenPelo.app/Contents/Info.plist
-        
-        # Manually set the Bundle Identifier
-        plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
+        # Safety Check: Generate Info.plist if Nuitka failed to create it
+        if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
+            echo "Info.plist missing, creating basic one..."
+            mkdir -p dist/OpenPelo.app/Contents
+            cat > dist/OpenPelo.app/Contents/Info.plist <<EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>openpelo</string>
+            <key>CFBundleIconFile</key>
+            <string>Icon.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.doudar.openpelo</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>OpenPelo</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.13.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+        </dict>
+        </plist>
+        EOF
+        else
+            echo "Info.plist exists, updating identifiers..."
+            plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
+            # Ensure the plist points to the lowercase binary 'openpelo' that Nuitka creates
+            plutil -replace CFBundleExecutable -string "openpelo" dist/OpenPelo.app/Contents/Info.plist
+        fi
 
     - name: Sign App Bundle
       run: |
@@ -490,9 +560,9 @@ jobs:
         
         # Merge binaries
         lipo -create \
-          arm_extracted/dist/OpenPelo.app/Contents/MacOS/OpenPelo \
-          intel_extracted/dist/OpenPelo.app/Contents/MacOS/OpenPelo \
-          -output dist/OpenPelo.app/Contents/MacOS/OpenPelo
+          arm_extracted/dist/OpenPelo.app/Contents/MacOS/openpelo \
+          intel_extracted/dist/OpenPelo.app/Contents/MacOS/openpelo \
+          -output dist/OpenPelo.app/Contents/MacOS/openpelo
         
         # Sign App
         codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
