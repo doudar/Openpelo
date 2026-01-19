@@ -222,6 +222,10 @@ jobs:
         
         # Copy to dist/OpenPelo.app (Capitalized)
         cp -R "$APP_BUNDLE" dist/OpenPelo.app
+
+        # FIX: Manually copy Icon.icns to Resources to ensure it shows up in the .app
+        mkdir -p dist/OpenPelo.app/Contents/Resources
+        cp Icon.icns dist/OpenPelo.app/Contents/Resources/Icon.icns
         
         # Safety Check: Generate Info.plist if Nuitka failed to create it
         if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
@@ -402,6 +406,10 @@ jobs:
         
         # Copy to dist/OpenPelo.app (Capitalized)
         cp -R "$APP_BUNDLE" dist/OpenPelo.app
+
+        # FIX: Manually copy Icon.icns to Resources to ensure it shows up in the .app
+        mkdir -p dist/OpenPelo.app/Contents/Resources
+        cp Icon.icns dist/OpenPelo.app/Contents/Resources/Icon.icns
         
         # Safety Check: Generate Info.plist if Nuitka failed to create it
         if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
