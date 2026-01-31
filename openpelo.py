@@ -20,6 +20,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable, List, Set
 import ipaddress
+import hashlib
 
 logging.basicConfig(level=logging.INFO)
 
@@ -930,6 +931,29 @@ class OpenPeloGUI:
             if not zip_path.exists():
                 messagebox.showerror("Error", f"ADB file not found: {zip_path}")
                 return False
+
+            expected_hashes = {
+                'windows': 'cc9a43feda8d5758d94041bfd4623e5d1681be414df08988880731bafc46abeb',
+                'darwin': 'da9632c763fc36d0008752f5e0216cefa028a4ae3c290ebcc5ce08a3174b44cb',
+                'linux': '4804403b06e40a7570f1e3e539d7e4b22a632d557a00c60f1cf3746e6d4ca23b'
+            }
+
+            def _sha256_file(path: Path) -> str:
+                h = hashlib.sha256()
+                with open(path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(8192), b''):
+                        h.update(chunk)
+                return h.hexdigest()
+
+            expected = expected_hashes.get(self.system)
+            if expected:
+                actual = _sha256_file(zip_path)
+                if actual.lower() != expected.lower():
+                    messagebox.showerror(
+                        "Integrity Check Failed",
+                        "ADB bundle failed integrity verification. Please re-download OpenPelo."
+                    )
+                    return False
 
             # Extract platform-tools
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
