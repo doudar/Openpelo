@@ -19,6 +19,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable, List, Set
+import ipaddress
 
 logging.basicConfig(level=logging.INFO)
 
@@ -1860,6 +1861,26 @@ class WirelessPairingDialog:
                 "Error",
                 "Select a device from the scan list or enter the IP/ports manually."
             )
+            return
+
+        def _validate_ip(value: str) -> bool:
+            try:
+                ipaddress.ip_address(value)
+                return True
+            except ValueError:
+                return False
+
+        def _validate_port(value: str) -> bool:
+            return value.isdigit() and 1 <= int(value) <= 65535
+
+        if ip and not _validate_ip(ip):
+            messagebox.showerror("Invalid Input", "Please enter a valid IP address.")
+            return
+        if port and not _validate_port(port):
+            messagebox.showerror("Invalid Input", "Please enter a valid pairing port (1-65535).")
+            return
+        if conport and not _validate_port(conport):
+            messagebox.showerror("Invalid Input", "Please enter a valid wireless debugging port (1-65535).")
             return
         
         # Disable buttons during connection
