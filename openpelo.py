@@ -899,6 +899,24 @@ class OpenPeloGUI:
             messagebox.showerror("Error", f"Error loading config: {e}")
             return {}
 
+    def _sha256_file(self, path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def adb_hashes(self) -> dict:
+        """
+        Return expected SHA-256 hashes for the bundled platform-tools archives.
+        Values can be injected at build time by replacing this method output.
+        """
+        return {
+            'windows': os.environ.get('OPENPELO_ADB_ZIP_SHA256_WINDOWS', ''),
+            'darwin': os.environ.get('OPENPELO_ADB_ZIP_SHA256_DARWIN', ''),
+            'linux': os.environ.get('OPENPELO_ADB_ZIP_SHA256_LINUX', '')
+        }
+
     def setup_adb(self):
         """Setup ADB from local files in the ADB folder if not already present"""
         if self.adb_path.exists():
@@ -932,23 +950,10 @@ class OpenPeloGUI:
                 messagebox.showerror("Error", f"ADB file not found: {zip_path}")
                 return False
 
-            expected_hashes = {
-                'windows': 'cc9a43feda8d5758d94041bfd4623e5d1681be414df08988880731bafc46abeb',
-                'darwin': 'da9632c763fc36d0008752f5e0216cefa028a4ae3c290ebcc5ce08a3174b44cb',
-                'linux': '4804403b06e40a7570f1e3e539d7e4b22a632d557a00c60f1cf3746e6d4ca23b'
-            }
-
-            def _sha256_file(path: Path) -> str:
-                h = hashlib.sha256()
-                with open(path, 'rb') as f:
-                    for chunk in iter(lambda: f.read(8192), b''):
-                        h.update(chunk)
-                return h.hexdigest()
-
-            expected = expected_hashes.get(self.system)
-            if expected:
-                actual = _sha256_file(zip_path)
-                if actual.lower() != expected.lower():
+            expected_hash = self.adb_hashes().get(self.system)
+            if expected_hash:
+                actual = self._sha256_file(zip_path)
+                if actual.lower() != expected_hash.lower():
                     messagebox.showerror(
                         "Integrity Check Failed",
                         "ADB bundle failed integrity verification. Please re-download OpenPelo."
