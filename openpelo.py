@@ -2609,7 +2609,7 @@ class PelotonUninstaller:
                 
                 # Filter: contains "peloton" (case-insensitive) AND NOT contains "affernet" OR "sensor"
                 pkg_lower = pkg.lower()
-                if 'peloton' in pkg_lower and 'affernet' not in pkg_lower and 'sensor' not in pkg_lower:
+                if 'peloton' in pkg_lower and 'affernet' not in pkg_lower and 'input' not in pkg_lower and 'sensor' not in pkg_lower:
                     packages.append(pkg)
             
             packages.sort()
