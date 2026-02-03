@@ -145,6 +145,16 @@ class OpenPeloGUI:
                     pass
 
     def setup_gui(self):
+        # Menu Bar
+        menubar = tk.Menu(self.root)
+        self.tools_menu = tk.Menu(menubar, tearoff=0)
+        self.tools_menu.add_command(label="Uninstall Peloton Apps", command=self.show_uninstall_tool)
+        self.tools_menu.add_separator()
+        self.tools_menu.add_command(label="Take Screenshot", command=self.take_screenshot, state='disabled')
+        self.tools_menu.add_command(label="Start Recording", command=self.toggle_recording, state='disabled')
+        menubar.add_cascade(label="Tools", menu=self.tools_menu)
+        self.root.config(menu=menubar)
+
         # Configure grid
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(3, weight=1, minsize=90)
@@ -216,21 +226,18 @@ class OpenPeloGUI:
             length=560
         )
         self.progress.grid(row=2, column=0, columnspan=2, pady=10, padx=20)
+        
 
         # ADB log frame (row 3)
-        self.adb_log_frame = ttk.LabelFrame(self.root, text="ADB Messages", style='Section.TLabelframe')
+        self.adb_log_frame = ttk.LabelFrame(self.root, text="ADB Messages")
         self.adb_log_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=20, pady=5)
-        self.adb_log_frame.grid_columnconfigure(0, weight=1)
-        self.adb_log_frame.grid_rowconfigure(0, weight=1)
         self.adb_log_frame.configure(height=200)
-        self.adb_log_frame.grid_propagate(False)
-
+        
         self.adb_log = tk.Text(self.adb_log_frame, height=8, wrap='word', state='disabled')
         self.adb_log.configure(font=('TkFixedFont', 9))
-        self.adb_log.grid(row=0, column=0, sticky='nsew')
-
         self.adb_scrollbar = ttk.Scrollbar(self.adb_log_frame, orient='vertical', command=self.adb_log.yview)
-        self.adb_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.adb_log.pack(side='left', fill='both', expand=True)
+        self.adb_scrollbar.pack(side='right', fill='y')
         self.adb_log.config(yscrollcommand=self.adb_scrollbar.set)
 
         self.adb_log.tag_configure('command', foreground='#0b6fa4')
@@ -243,16 +250,19 @@ class OpenPeloGUI:
         self._flush_pending_logs()
 
         # Apps frame (row 4)
-        self.apps_frame = ttk.LabelFrame(self.root, text="Available Apps", style='Section.TLabelframe')
+        # Use default style (no internal padding) so scrollbar sits flush
+        self.apps_frame = ttk.LabelFrame(self.root, text="Available Apps")
         self.apps_frame.grid(row=4, column=0, columnspan=2, sticky='nsew', padx=20, pady=10)
-        self.apps_frame.grid_columnconfigure(0, weight=1)
-        self.apps_frame.grid_rowconfigure(0, weight=1)
 
-        self.apps_canvas = tk.Canvas(self.apps_frame, borderwidth=0, highlightthickness=0)
+        # Use default border/highlight (remove 0 settings) to match Uninstaller look
+        self.apps_canvas = tk.Canvas(self.apps_frame)
         self.apps_scrollbar = ttk.Scrollbar(self.apps_frame, orient='vertical', command=self.apps_canvas.yview)
         self.apps_canvas.configure(yscrollcommand=self.apps_scrollbar.set)
-        self.apps_canvas.grid(row=0, column=0, sticky='nsew')
-        self.apps_scrollbar.grid(row=0, column=1, sticky='ns')
+        
+        # Pack order matches PelotonUninstaller: Content Left, Scrollbar Right
+        self.apps_canvas.pack(side='left', fill='both', expand=True)
+        self.apps_scrollbar.pack(side='right', fill='y')
+        self.apps_canvas.pack(side='left', fill='both', expand=True)
 
         self.apps_inner = ttk.Frame(self.apps_canvas)
         self.apps_inner_window = self.apps_canvas.create_window((0, 0), window=self.apps_inner, anchor='nw')
@@ -305,8 +315,8 @@ class OpenPeloGUI:
         )
         self.install_local_btn.grid(row=1, column=3, padx=5)
 
-         # Media Controls Frame (row 6)
-        media_frame = ttk.LabelFrame(self.root, text="Screen Recording Utility", style='Section.TLabelframe')
+         # Media Settings Frame (row 6) - renamed from Screen Recording Utility
+        media_frame = ttk.LabelFrame(self.root, text="Media Settings", style='Section.TLabelframe')
         media_frame.grid(row=6, column=0, columnspan=2, sticky='ew', padx=20, pady=10)
         media_frame.grid_columnconfigure(1, weight=1)
 
@@ -322,25 +332,11 @@ class OpenPeloGUI:
             command=self.choose_save_location
         ).grid(row=0, column=2, padx=5)
 
-        # Media buttons
-        media_buttons_frame = ttk.Frame(media_frame)
-        media_buttons_frame.grid(row=1, column=0, columnspan=3, pady=10)
-
-        self.screenshot_btn = ttk.Button(
-            media_buttons_frame,
-            text="📸 Take Screenshot",
-            command=self.take_screenshot,
-            state='disabled'
-        )
-        self.screenshot_btn.pack(side='left', padx=5)
-
-        self.record_btn = ttk.Button(
-            media_buttons_frame,
-            text="🔴 Start Recording",
-            command=self.toggle_recording,
-            state='disabled'
-        )
-        self.record_btn.pack(side='left', padx=5)
+        ttk.Button(
+            media_frame,
+            text="Open Folder",
+            command=self.open_save_location
+        ).grid(row=0, column=3, padx=5)
 
     def _format_command(self, parts):
         string_parts = [str(part) for part in parts]
@@ -532,9 +528,14 @@ class OpenPeloGUI:
                 self._last_device_abi = None
                 self._last_device_count = 0
                 self._selected_device_cache = []
-                self.screenshot_btn.config(state='disabled')
+                # Update Tools Menu
+                try:
+                    self.tools_menu.entryconfig("Take Screenshot", state='disabled')
+                except Exception: pass
                 if not self.is_recording:
-                    self.record_btn.config(state='disabled')
+                    try:
+                         self.tools_menu.entryconfig("Start Recording", state='disabled')
+                    except Exception: pass
                 self._update_install_buttons_state()
                 return False
 
@@ -586,16 +587,26 @@ class OpenPeloGUI:
             self.install_local_btn.config(state='normal' if has_selection else 'disabled')
             if not has_selection:
                 self.status_label.config(text="Select a device to continue.")
-                self.screenshot_btn.config(state='disabled')
+                try:
+                    self.tools_menu.entryconfig("Take Screenshot", state='disabled')
+                except Exception: pass
                 if not self.is_recording:
-                    self.record_btn.config(state='disabled')
+                    try:
+                        self.tools_menu.entryconfig("Start Recording", state='disabled')
+                    except Exception: pass
                 self._display_apps_placeholder("Select a device to view compatible applications.")
             else:
-                self.screenshot_btn.config(state='normal')
+                try:
+                    self.tools_menu.entryconfig("Take Screenshot", state='normal')
+                except Exception: pass
                 if not self.is_recording:
-                    self.record_btn.config(state='normal')
+                    try:
+                        self.tools_menu.entryconfig("Start Recording", state='normal')
+                    except Exception: pass
             if self.is_recording:
-                self.record_btn.config(state='normal')
+                try:
+                    self.tools_menu.entryconfig("Start Recording", state='normal')
+                except Exception: pass
 
             self._last_device_info = primary_device
             self._last_device_abi = resolved_abi or None
@@ -1011,6 +1022,23 @@ class OpenPeloGUI:
             self.save_location = new_location
             self.save_location_var.set(new_location)
 
+    def open_save_location(self):
+        """Open the save location folder in file explorer"""
+        path = self.save_location
+        if not os.path.exists(path):
+            messagebox.showwarning("Warning", "Save location does not exist.")
+            return
+            
+        try:
+            if self.system == 'windows':
+                os.startfile(path)
+            elif self.system == 'darwin':
+                subprocess.Popen(['open', path])
+            else:
+                subprocess.Popen(['xdg-open', path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open folder: {e}")
+
     def take_screenshot(self):
         """Take a screenshot of the device screen"""
         serial = self._require_single_device("take a screenshot")
@@ -1059,8 +1087,12 @@ class OpenPeloGUI:
                 )
                 
                 self.is_recording = True
-                self.record_btn.config(text="⏹️ Stop Recording")
-                self.screenshot_btn.config(state='disabled')
+                try:
+                    self.tools_menu.entryconfig("Start Recording", label="Stop Recording")
+                except Exception: pass
+                try:
+                    self.tools_menu.entryconfig("Take Screenshot", state='disabled')
+                except Exception: pass
                 
             except subprocess.CalledProcessError as e:
                 self.recording_serial = None
@@ -1095,8 +1127,12 @@ class OpenPeloGUI:
                 self.adb_run('-s', serial, 'shell', 'rm', f'/sdcard/{self.current_recording}', check=True)
                 
                 self.is_recording = False
-                self.record_btn.config(text="🔴 Start Recording")
-                self.screenshot_btn.config(state='normal')
+                try: 
+                    self.tools_menu.entryconfig("Stop Recording", label="Start Recording") 
+                except Exception: pass
+                try:
+                    self.tools_menu.entryconfig("Take Screenshot", state='normal')
+                except Exception: pass
                 self.recording_serial = None
                 if self._current_devices:
                     self._process_connected_devices(self._current_devices, update_selection=False)
@@ -1106,7 +1142,9 @@ class OpenPeloGUI:
                 
             except subprocess.CalledProcessError as e:
                 self.is_recording = False
-                self.record_btn.config(text="🔴 Start Recording")
+                try: 
+                    self.tools_menu.entryconfig("Stop Recording", label="Start Recording") 
+                except Exception: pass
                 self.recording_serial = None
                 self.recording_process = None
                 if self._current_devices:
@@ -1114,7 +1152,9 @@ class OpenPeloGUI:
                 messagebox.showerror("Error", f"Failed to save recording: {e}")
             except Exception as e:
                 self.is_recording = False
-                self.record_btn.config(text="🔴 Start Recording")
+                try: 
+                    self.tools_menu.entryconfig("Stop Recording", label="Start Recording") 
+                except Exception: pass
                 self.recording_serial = None
                 self.recording_process = None
                 if self._current_devices:
@@ -1392,6 +1432,11 @@ class OpenPeloGUI:
         """Show the USB debugging guide window"""
         guide = UsbDebugGuide(self.root)
         guide.show()
+
+    def show_uninstall_tool(self):
+        """Show the Peloton uninstaller tool"""
+        tool = PelotonUninstaller(self.root, self)
+        tool.show()
 
     def show_wifi_guide(self):
         """Show the wireless ADB guide window"""
@@ -2461,6 +2506,201 @@ class UsbDebugGuide:
         self.update_content()  # Initialize with first step
         self.window.grab_set()  # Make window modal
         self.window.focus_set()
+
+class PelotonUninstaller:
+    def __init__(self, parent, app):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Uninstall Peloton Apps")
+        self.window.geometry("600x600")
+        self.app = app
+        self.packages = []
+        self.vars = {}
+
+        self.setup_gui()
+        self.refresh_packages()
+
+    def setup_gui(self):
+        # Warning Header
+        warning_frame = tk.Frame(self.window, bg='#ffebee')
+        warning_frame.pack(fill='x', padx=10, pady=10)
+        
+        warning_label = tk.Label(
+            warning_frame,
+            text="⚠️ WARNING: IRREVERSIBLE ACTION ⚠️\n\nUninstalling core Peloton system applications may render\nyour tablet completely UNUSABLE (brick it).\n\nProceed only if you absolutely know what you are doing.",
+            fg='#c62828',
+            bg='#ffebee',
+            font=('Helvetica', 10, 'bold'),
+            justify='center',
+            padx=10,
+            pady=10
+        )
+        warning_label.pack(fill='x')
+
+        # List Frame
+        list_frame = ttk.LabelFrame(self.window, text="Detected Peloton Packages")
+        list_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        canvas = tk.Canvas(list_frame)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Binding mouse wheel for the canvas
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Buttons
+        btn_frame = ttk.Frame(self.window)
+        btn_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Button(btn_frame, text="Select All", command=self.select_all).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Deselect All", command=self.deselect_all).pack(side='left', padx=5)
+        
+        self.uninstall_btn = ttk.Button(
+            btn_frame, 
+            text="🗑️ UNINSTALL SELECTED", 
+            command=self.uninstall_selected
+        )
+        self.uninstall_btn.pack(side='right', padx=5)
+
+    def select_all(self):
+        for v in self.vars.values():
+            v.set(True)
+
+    def deselect_all(self):
+        for v in self.vars.values():
+            v.set(False)
+
+    def refresh_packages(self):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        self.vars = {}
+        
+        serial = self.app._require_single_device("scan packages")
+        if not serial:
+            self.window.destroy()
+            return
+
+        try:
+            # List packages
+            result = self.app.adb_run('-s', serial, 'shell', 'pm', 'list', 'packages')
+            if result.returncode != 0:
+                raise Exception(result.stderr or "Unknown error")
+            
+            output = result.stdout or ""
+            packages = []
+            for line in output.splitlines():
+                if not line.strip(): continue
+                # Line format: package:com.example.app
+                pkg = line.replace('package:', '').strip()
+                
+                # Filter: contains "peloton" (case-insensitive) AND NOT contains "affernet" OR "sensor"
+                pkg_lower = pkg.lower()
+                if 'peloton' in pkg_lower and 'affernet' not in pkg_lower and 'sensor' not in pkg_lower:
+                    packages.append(pkg)
+            
+            packages.sort()
+            
+            if not packages:
+                ttk.Label(self.scrollable_frame, text="No Peloton packages found matching criteria.").pack(padx=10, pady=10)
+                return
+
+            for pkg in packages:
+                var = tk.BooleanVar()
+                self.vars[pkg] = var
+                cb = ttk.Checkbutton(self.scrollable_frame, text=pkg, variable=var)
+                cb.pack(anchor='w', padx=5, pady=2)
+                
+        except Exception as e:
+            messagebox.showerror("Scan Error", f"Failed to list packages: {e}", parent=self.window)
+
+    def uninstall_selected(self):
+        selected = [pkg for pkg, var in self.vars.items() if var.get()]
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select at least one package to uninstall.", parent=self.window)
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Uninstall", 
+            f"Are you sure you want to uninstall {len(selected)} packages?\n\n"
+             "This action is IRREVERSIBLE and could BRICK your device.\n\n"
+             "Do you want to proceed?",
+            icon='warning',
+            parent=self.window
+        ):
+            return
+
+        serial = self.app._require_single_device("uninstall packages")
+        if not serial:
+            return
+
+        self.uninstall_btn.state(['disabled'])
+        self.app.progress.start()
+        
+        threading.Thread(target=self._run_uninstall_thread, args=(serial, selected), daemon=True).start()
+
+    def _run_uninstall_thread(self, serial, selected):
+        success_count = 0
+        fail_count = 0
+        
+        for pkg in selected:
+            try:
+                self.app.log_adb_message(f"Uninstalling {pkg}...", tag='command')
+                
+                # Method 1: Standard uninstall
+                result = self.app.adb_run('-s', serial, 'uninstall', pkg)
+                output = (result.stdout or "") + (result.stderr or "")
+                
+                if result.returncode == 0 and 'Success' in output:
+                    success_count += 1
+                    self.app.log_adb_message(f"Uninstalled {pkg}", tag='status')
+                else:
+                    # Method 2: System app uninstall (pm uninstall --user 0)
+                    # This is required for pre-installed system apps which cannot be fully removed
+                    self.app.log_adb_message(f"Standard install failed ({output.strip()}), trying user 0 override...", tag='info')
+                    result = self.app.adb_run('-s', serial, 'shell', 'pm', 'uninstall', '--user', '0', pkg)
+                    output = (result.stdout or "") + (result.stderr or "")
+
+                    if result.returncode == 0 and 'Success' in output:
+                        success_count += 1
+                        self.app.log_adb_message(f"Uninstalled {pkg} (user 0)", tag='status')
+                    else:
+                        fail_count += 1
+                        self.app.log_adb_message(f"Failed to uninstall {pkg}: {output.strip()}", tag='error')
+
+            except Exception as e:
+                fail_count += 1
+                self.app.log_adb_message(f"Exception uninstalling {pkg}: {e}", tag='error')
+        
+        self.window.after(0, lambda: self._on_uninstall_complete(success_count, fail_count))
+
+    def _on_uninstall_complete(self, success_count, fail_count):
+        self.app.progress.stop()
+        self.uninstall_btn.state(['!disabled'])
+        self.refresh_packages()
+        
+        messagebox.showinfo(
+            "Uninstall Complete", 
+            f"Result:\n✅ {success_count} uninstalled\n❌ {fail_count} failed",
+            parent=self.window
+        )
+        
+    def show(self):
+        self.window.deiconify()
+        self.window.lift()
+        self.window.focus_force()
 
 def main():
     app = OpenPeloGUI()
