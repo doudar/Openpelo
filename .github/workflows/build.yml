@@ -81,6 +81,8 @@ jobs:
           --output-dir=build/windows `
           --remove-output `
           openpelo.py
+        $hash = (Get-FileHash ADB\\platform-tools-latest-windows.zip -Algorithm SHA256).Hash.ToLower()
+        echo "OPENPELO_ADB_ZIP_SHA256_WINDOWS=$hash" >> $Env:GITHUB_ENV
         New-Item -ItemType Directory -Path dist -Force | Out-Null
         Copy-Item build/windows/OpenPelo.exe dist/OpenPelo.exe
     
@@ -128,6 +130,7 @@ jobs:
           --output-dir=build/linux \
           --remove-output \
           openpelo.py
+        export OPENPELO_ADB_ZIP_SHA256_LINUX=$(sha256sum ADB/platform-tools-latest-linux.zip | awk '{print tolower($1)}')
         mkdir -p dist
         cp build/linux/OpenPelo dist/OpenPelo
         chmod +x dist/OpenPelo
@@ -208,6 +211,8 @@ jobs:
           --macos-app-name=OpenPelo \
           --macos-app-icon=Icon.icns \
           openpelo.py
+        
+        export OPENPELO_ADB_ZIP_SHA256_DARWIN=$(shasum -a 256 ADB/platform-tools-latest-darwin.zip | awk '{print tolower($1)}')
         
         # Move to dist for further processing
         mkdir -p dist

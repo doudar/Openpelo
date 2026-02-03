@@ -20,6 +20,8 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable, List, Set
+import ipaddress
+import hashlib
 
 logging.basicConfig(level=logging.INFO)
 
@@ -909,6 +911,24 @@ class OpenPeloGUI:
             messagebox.showerror("Error", f"Error loading config: {e}")
             return {}
 
+    def _sha256_file(self, path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def adb_hashes(self) -> dict:
+        """
+        Return expected SHA-256 hashes for the bundled platform-tools archives.
+        Values can be injected at build time by replacing this method output.
+        """
+        return {
+            'windows': os.environ.get('OPENPELO_ADB_ZIP_SHA256_WINDOWS', ''),
+            'darwin': os.environ.get('OPENPELO_ADB_ZIP_SHA256_DARWIN', ''),
+            'linux': os.environ.get('OPENPELO_ADB_ZIP_SHA256_LINUX', '')
+        }
+
     def setup_adb(self):
         """Setup ADB from local files in the ADB folder if not already present"""
         if self.adb_path.exists():
@@ -941,6 +961,16 @@ class OpenPeloGUI:
             if not zip_path.exists():
                 messagebox.showerror("Error", f"ADB file not found: {zip_path}")
                 return False
+
+            expected_hash = self.adb_hashes().get(self.system)
+            if expected_hash:
+                actual = self._sha256_file(zip_path)
+                if actual.lower() != expected_hash.lower():
+                    messagebox.showerror(
+                        "Integrity Check Failed",
+                        "ADB bundle failed integrity verification. Please re-download OpenPelo."
+                    )
+                    return False
 
             # Extract platform-tools
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -1951,6 +1981,26 @@ class WirelessPairingDialog:
                 "Error",
                 "Select a device from the scan list or enter the IP/ports manually."
             )
+            return
+
+        def _validate_ip(value: str) -> bool:
+            try:
+                ipaddress.ip_address(value)
+                return True
+            except ValueError:
+                return False
+
+        def _validate_port(value: str) -> bool:
+            return value.isdigit() and 1 <= int(value) <= 65535
+
+        if ip and not _validate_ip(ip):
+            messagebox.showerror("Invalid Input", "Please enter a valid IP address.")
+            return
+        if port and not _validate_port(port):
+            messagebox.showerror("Invalid Input", "Please enter a valid pairing port (1-65535).")
+            return
+        if conport and not _validate_port(conport):
+            messagebox.showerror("Invalid Input", "Please enter a valid wireless debugging port (1-65535).")
             return
         
         # Disable buttons during connection
