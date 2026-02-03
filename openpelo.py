@@ -1,6 +1,7 @@
 import os
 import sys
 import platform
+import re
 import urllib.request
 from urllib.parse import urlparse
 import zipfile
@@ -1190,7 +1191,28 @@ class OpenPeloGUI:
 
                     # Install APK
                     self.status_label.config(text=f"Installing {app_name}...")
-                    result = self.adb_run('-s', serial, 'install', '-r', str(apk_path))
+                    result = self.adb_run('-s', serial, 'install', '-r', '-d', '-g', '-t', str(apk_path))
+                    
+                    output = (result.stdout or '') + (result.stderr or '')
+
+                    if 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' in output:
+                        # Try to parse properties package name first
+                        match = re.search(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures', output)
+                        conflicting_pkg = match.group(1) if match else app_info.get('package_name')
+
+                        if messagebox.askyesno(
+                            "App Update Required",
+                            f"The installed version of '{app_name}' is not compatible with this update.\n\n"
+                            "Would you like to uninstall the old version and install the new one?\n"
+                            "(Your app data will be reset)",
+                            icon='warning'
+                        ):
+                            self.previous_status = self.status_label.cget("text")
+                            self.status_label.config(text=f"Uninstalling old {app_name}...")
+                            self.adb_run('-s', serial, 'uninstall', conflicting_pkg)
+                            self.status_label.config(text=f"Retrying install of {app_name}...")
+                            result = self.adb_run('-s', serial, 'install', '-r', '-d', '-g', '-t', str(apk_path))
+                            output = (result.stdout or '') + (result.stderr or '')
 
                     # Clean up APK file
                     apk_path.unlink()
@@ -1198,7 +1220,7 @@ class OpenPeloGUI:
                     if 'Success' not in result.stdout:
                         messagebox.showerror(
                             "Installation Error",
-                            f"Error installing {app_name}: {result.stdout}"
+                            f"Error installing {app_name}: {output}"
                         )
                     else:
                         self.log_adb_message(f"{app_name} installed successfully.", tag='status')
@@ -1313,8 +1335,32 @@ class OpenPeloGUI:
             
             try:
                 self.status_label.config(text="Installing APK...")
-                result = self.adb_run('-s', serial, 'install', '-r', apk_path)
+                result = self.adb_run('-s', serial, 'install', '-r', '-d', '-g', '-t', apk_path)
                 
+                output = (result.stdout or '') + (result.stderr or '')
+                
+                if 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' in output:
+                    self.log_adb_message(f"Signature mismatch detected. Parsing package name...", tag='info')
+                    # Search specifically for the package name in the error message
+                    match = re.search(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures', output)
+                    pkg_name = match.group(1) if match else None
+                    
+                    if pkg_name:
+                        self.log_adb_message(f"Found conflicting package: {pkg_name}", tag='info')
+                        if messagebox.askyesno(
+                            "App Update Required",
+                            f"The installed version of '{pkg_name}' is not compatible with this update.\n\n"
+                            "Would you like to uninstall the old version and install the new one?\n"
+                            "(Your app data will be reset)",
+                            icon='warning'
+                        ):
+                             self.status_label.config(text=f"Uninstalling {pkg_name}...")
+                             self.adb_run('-s', serial, 'uninstall', pkg_name)
+                             self.status_label.config(text="Retrying installation...")
+                             result = self.adb_run('-s', serial, 'install', '-r', '-d', '-g', '-t', apk_path)
+                    else:
+                        self.log_adb_message("Could not extract package name from error message.", tag='error')
+
                 if 'Success' in result.stdout:
                     messagebox.showinfo("Success", "APK installed successfully!")
                     self.status_label.config(text="APK installation complete!")
