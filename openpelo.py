@@ -1430,7 +1430,7 @@ class OpenPeloGUI:
 
     def show_debug_guide(self):
         """Show the USB debugging guide window"""
-        guide = UsbDebugGuide(self.root)
+        guide = UsbDebugGuide(self.root, self)
         guide.show()
 
     def show_uninstall_tool(self):
@@ -2403,8 +2403,9 @@ class WirelessPairingDialog:
         self._port_scan_total = 0
 
 class UsbDebugGuide:
-    def __init__(self, parent):
+    def __init__(self, parent, app):
         self.window = tk.Toplevel(parent)
+        self.app = app
         self.window.title("USB Debugging Guide")
         self.window.geometry("500x300")
         self.window.resizable(False, False)
@@ -2418,7 +2419,7 @@ class UsbDebugGuide:
                 steps_path = base_path / 'usb_debug_steps.json'
             else:
                 # Running as script
-                steps_path = self.working_dir / 'usb_debug_steps.json'
+                steps_path = self.app.working_dir / 'usb_debug_steps.json'
             
             with open(steps_path, 'r') as f:
                 self.steps = json.load(f)['steps']
