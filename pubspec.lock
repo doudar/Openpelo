@@ -155,7 +155,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "9d29fbc98360a254649d4e58f2a04abab070db7b"
+      resolved-ref: "15edbcf3020dcd260419656022afd8fdfce96176"
       url: "https://github.com/doudar/flutter_adb.git"
     source: git
     version: "0.1.1"
