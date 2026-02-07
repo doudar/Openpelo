@@ -71,6 +71,11 @@ class AdbService {
            onLog("ADB extraction complete.", 'info');
         }
       }
+      
+      // Ensure executable permissions are set on Mac/Linux even if file already existed
+      if (!Platform.isWindows && _adbPath != null) {
+          await Process.run('/bin/chmod', ['+x', _adbPath!]);
+      }
     } catch (e) {
       onLog("Error initializing ADB: $e", 'error');
     }

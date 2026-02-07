@@ -49,7 +49,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
           return SimpleDialogOption(
             onPressed: () {
                _ipController.text = d['ip'] ?? '';
-               _pairPortController.text = d['port'] ?? '';
+               _connectPortController.text = d['port'] ?? '';
                Navigator.pop(ctx);
             },
             child: ListTile(
@@ -264,13 +264,36 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
           // Python shows logs in the dialog status.
           // Let's verify connection status here.
           Consumer<AppProvider>(
-            builder: (context, provider, _) => Text(
-              provider.statusMessage,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: provider.statusMessage.contains('✅') ? Colors.green : Colors.black
-              ),
-            ),
+            builder: (context, provider, _) {
+              final isConnected = provider.statusMessage.contains('✅');
+              return Column(
+                children: [
+                  Text(
+                    provider.statusMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isConnected ? Colors.green : Colors.black
+                    ),
+                  ),
+                  if (isConnected)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.all(16),
+                          ),
+                          child: const Text("Done - Back to Home", style: TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           )
         ],
       ),

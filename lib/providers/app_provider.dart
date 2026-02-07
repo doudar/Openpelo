@@ -177,6 +177,10 @@ class AppProvider with ChangeNotifier {
            final filename = app.package ?? "${app.name.replaceAll(' ', '_')}.apk";
            final apkPath = p.join(tempDir.path, filename);
            final file = File(apkPath);
+           // Ensure directory exists
+           if (!await file.parent.exists()) {
+             await file.parent.create(recursive: true);
+           }
            await file.writeAsBytes(response.bodyBytes);
            
            _onLog("Installing ${app.name}...", 'info');
