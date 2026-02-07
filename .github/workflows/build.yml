@@ -8,6 +8,41 @@ on:
   workflow_dispatch:
 
 jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Bump version and push tag
+        run: |
+          VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
+          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]}"
+          PATCH="${VERSION_PARTS[2]}"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          echo "{\"version\": \"$NEW_VERSION\"}" > version.json
+          
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add version.json
+          git commit -m "Bump version to $NEW_VERSION"
+          
+          git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
+          git push origin main --tags
+          git push
   build-windows:
     runs-on: windows-latest
     steps:
@@ -164,3 +199,48 @@ jobs:
         with:
           name: OpenPelo-Linux
           path: dist/OpenPelo-Linux.tar.gz
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Version from pubspec.yaml
+        id: get_version
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | cut -d ' ' -f 2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenPelo-Windows-Installer
+          path: windows_dist
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenPelo-macOS-DMG
+          path: macos_dist
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenPelo-Linux
+          path: linux_dist
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            windows_dist/OpenPelo_Setup_Windows.exe
+            macos_dist/OpenPelo-macOS.dmg
+            linux_dist/OpenPelo-Linux.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
