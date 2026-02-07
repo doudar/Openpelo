@@ -17,7 +17,6 @@ jobs:
         uses: flutter-actions/setup-flutter@v3
         with:
           channel: stable
-          version: 3.10.6
 
       - name: Install Inno Setup
         run: |
@@ -51,7 +50,6 @@ jobs:
         uses: flutter-actions/setup-flutter@v3
         with:
           channel: stable
-          version: 3.10.6
 
       - name: Install dependencies
         run: flutter pub get
@@ -126,7 +124,6 @@ jobs:
         uses: flutter-actions/setup-flutter@v3
         with:
           channel: stable
-          version: 3.10.6
 
       - name: Install dependencies
         run: flutter pub get

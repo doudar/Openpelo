@@ -1,10 +1,11 @@
 name: openpelo
-description: "A new Flutter project."
+description: "Free Your Peloton"
 publish_to: 'none'
-version: 0.1.0
+version: 0.1.5
 
 environment:
-  sdk: ^3.10.8
+    sdk: ">=3.5.0 <4.0.0"
+    flutter: ">=3.24.0"
 
 dependencies:
   archive: ^4.0.7
