@@ -8,7 +8,7 @@ DefaultDirName={autopf}\OpenPelo
 DisableProgramGroupPage=yes
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=lowest
-OutputDir=..\..\dist
+OutputDir=..\dist
 OutputBaseFilename=OpenPelo_Setup_Windows
 SetupIconFile=runner\resources\app_icon.ico
 Compression=lzma
@@ -22,10 +22,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The build output is in build/windows/runner/Release
+; The build output is in build/windows/x64/runner/Release
 ; We need to include everything there
-Source: "..\..\build\windows\runner\Release\openpelo.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\build\windows\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\windows\x64\runner\Release\openpelo.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
