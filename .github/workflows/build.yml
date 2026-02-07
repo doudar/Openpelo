@@ -1,644 +1,147 @@
-name: Build Executables
+name: Build Flutter App
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
-  release:
-    types: [created]
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  bump-version:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Bump version and push tag
-        run: |
-          VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
-          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
-          MAJOR="${VERSION_PARTS[0]}"
-          MINOR="${VERSION_PARTS[1]}"
-          PATCH="${VERSION_PARTS[2]}"
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
-          echo "{\"version\": \"$NEW_VERSION\"}" > version.json
-          
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          git add version.json
-          git commit -m "Bump version to $NEW_VERSION"
-          
-          git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
-          git push origin main --tags
-          git push
-
   build-windows:
-    needs: [bump-version]
     runs-on: windows-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install nuitka zstandard certifi pillow
-    
-    - name: Build executable
-      run: |
-        python -m nuitka `
-          --standalone `
-          --onefile `
-          --enable-plugin=tk-inter `
-          --assume-yes-for-downloads `
-          --include-package=certifi `
-          --include-data-file=apps_config.json=apps_config.json `
-          --include-data-file=usb_debug_steps.json=usb_debug_steps.json `
-          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json `
-          --include-data-dir=ADB=ADB `
-          --include-data-dir=platform-tools=platform-tools `
-          --windows-console-mode=disable `
-          --windows-icon-from-ico=Icon.ico `
-          --output-filename=OpenPelo.exe `
-          --output-dir=build/windows `
-          --remove-output `
-          openpelo.py
-        New-Item -ItemType Directory -Path dist -Force | Out-Null
-        Copy-Item build/windows/OpenPelo.exe dist/OpenPelo.exe
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-Windows
-        path: dist/OpenPelo.exe
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK
+        uses: flutter-actions/setup-flutter@v3
+        with:
+          channel: stable
+          version: 3.10.6
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup
+
+      - name: Install dependencies
+        working-directory: .
+        run: flutter pub get
+
+      - name: Build Windows
+        working-directory: .
+        run: flutter build windows --release
+
+      - name: Create Installer
+        working-directory: windows
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" InnoSetupScript.iss
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenPelo-Windows-Installer
+          path: dist/OpenPelo_Setup_Windows.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK
+        uses: flutter-actions/setup-flutter@v3
+        with:
+          channel: stable
+          version: 3.10.6
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Install Certificate (Copied from previous workflow)
+      - name: Install Apple Certificate
+        if: runner.os == 'macOS'
+        env:
+            BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+            P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+            KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+            CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+            echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+            security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Sign App Bundle
+        env: 
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        run: |
+          # The app is located at build/macos/Build/Products/Release/openpelo.app
+          # We force sign it using the previous identity
+          codesign --force --verbose --timestamp --options runtime --deep --sign "$CODESIGN_IDENTITY" build/macos/Build/Products/Release/openpelo.app
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          mkdir -p dist
+          # create-dmg requires the source to be in a clean folder or handle directly
+          # We will just point it to the release folder
+          mkdir dmg_source
+          cp -R build/macos/Build/Products/Release/openpelo.app dmg_source/
+          
+          create-dmg \
+            --volname "OpenPelo Installer" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "openpelo.app" 200 190 \
+            --hide-extension "openpelo.app" \
+            --app-drop-link 600 185 \
+            "dist/OpenPelo-macOS.dmg" \
+            "dmg_source/"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenPelo-macOS-DMG
+          path: dist/OpenPelo-macOS.dmg
 
   build-linux:
-    needs: [bump-version]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - uses: actions/checkout@v4
 
-    - name: Install Tk system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-tk tk-dev
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install nuitka zstandard certifi pillow
-    
-    - name: Build executable
-      run: |
-        python -m nuitka \
-          --standalone \
-          --onefile \
-          --enable-plugin=tk-inter \
-          --include-package=certifi \
-          --include-data-file=apps_config.json=apps_config.json \
-          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
-          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
-          --include-data-dir=ADB=ADB \
-          --include-data-dir=platform-tools=platform-tools \
-          --output-filename=OpenPelo \
-          --output-dir=build/linux \
-          --remove-output \
-          openpelo.py
-        mkdir -p dist
-        cp build/linux/OpenPelo dist/OpenPelo
-        chmod +x dist/OpenPelo
-        tar -czf dist/OpenPelo-linux.tar.gz -C dist OpenPelo
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-Linux
-        path: dist/OpenPelo-linux.tar.gz
+      - name: Setup Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
-  build-macos-arm:
-    needs: [bump-version]
-    runs-on: macos-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install nuitka zstandard certifi pillow
-        brew install create-dmg
+      - name: Setup Flutter SDK
+        uses: flutter-actions/setup-flutter@v3
+        with:
+          channel: stable
+          version: 3.10.6
 
-    - name: Install Apple Certificate
-      if: runner.os == 'macOS'
-      env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
-      run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-    
-    - name: Create macOS Icon
-      run: |
-        mkdir OpenPelo.iconset
-        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
-        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
-        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
-        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        # Explicitly output to Icon.icns
-        iconutil -c icns OpenPelo.iconset -o Icon.icns
+      - name: Install dependencies
+        run: flutter pub get
 
-    - name: Build App Bundle
-      run: |
-        python -m nuitka \
-          --standalone \
-          --onefile \
-          --enable-plugin=tk-inter \
-          --assume-yes-for-downloads \
-          --include-package=certifi \
-          --include-data-file=apps_config.json=apps_config.json \
-          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
-          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
-          --include-data-dir=ADB=ADB \
-          --include-data-dir=platform-tools=platform-tools \
-          --output-dir=build/macos-arm \
-          --remove-output \
-          --macos-create-app-bundle \
-          --macos-app-name=OpenPelo \
-          --macos-app-icon=Icon.icns \
-          openpelo.py
-        
-        # Move to dist for further processing
-        mkdir -p dist
-        
-        # DEBUG: List build directory to see what Nuitka created
-        echo "Listing build directory:"
-        ls -R build/macos-arm
-        
-        # Find the generated app bundle (likely lowercase openpelo.app)
-        APP_BUNDLE=$(find build/macos-arm -maxdepth 1 -name "*.app" | head -n 1)
-        echo "Found generated bundle: $APP_BUNDLE"
-        
-        # Copy to dist/OpenPelo.app (Capitalized)
-        cp -R "$APP_BUNDLE" dist/OpenPelo.app
+      - name: Build Linux
+        run: flutter build linux --release
 
-        # FIX: Manually copy Icon.icns to Resources to ensure it shows up in the .app
-        mkdir -p dist/OpenPelo.app/Contents/Resources
-        cp Icon.icns dist/OpenPelo.app/Contents/Resources/Icon.icns
-        
-        # Safety Check: Generate Info.plist if Nuitka failed to create it
-        if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
-            echo "Info.plist missing, creating basic one..."
-            mkdir -p dist/OpenPelo.app/Contents
-            cat > dist/OpenPelo.app/Contents/Info.plist <<EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleExecutable</key>
-            <string>openpelo</string>
-            <key>CFBundleIconFile</key>
-            <string>Icon.icns</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.doudar.openpelo</string>
-            <key>CFBundleInfoDictionaryVersion</key>
-            <string>6.0</string>
-            <key>CFBundleName</key>
-            <string>OpenPelo</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0.0</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>10.13.0</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-        </dict>
-        </plist>
-        EOF
-        else
-            echo "Info.plist exists, updating identifiers..."
-            plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
-            # Ensure the plist points to the lowercase binary 'openpelo' that Nuitka creates
-            plutil -replace CFBundleExecutable -string "openpelo" dist/OpenPelo.app/Contents/Info.plist
-        fi
-        
-        # DEBUG: Verify Info.plist exists now
-        ls -l dist/OpenPelo.app/Contents/Info.plist
+      - name: Create Tarball
+        run: |
+          mkdir -p dist
+          # Copy everything from bundle
+          tar -czf dist/OpenPelo-Linux.tar.gz -C build/linux/x64/release/bundle .
 
-    - name: Sign App Bundle
-      run: |
-        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
-
-    # Zip the App Bundle for the Universal job to use later
-    - name: Prepare Intermediate Artifact
-      run: |
-        zip -r app.zip dist/OpenPelo.app
-
-    - name: Upload Intermediate App
-      uses: actions/upload-artifact@v4
-      with:
-        name: intermediate-app-arm
-        path: app.zip
-
-    - name: Create DMG
-      run: |
-        mkdir dmg_source
-        cp -R dist/OpenPelo.app dmg_source/
-        
-        create-dmg \
-          --volname "OpenPelo Installer" \
-          --volicon "Icon.icns" \
-          --window-pos 200 120 \
-          --window-size 800 400 \
-          --icon-size 100 \
-          --icon "OpenPelo.app" 200 190 \
-          --hide-extension "OpenPelo.app" \
-          --app-drop-link 600 185 \
-          "dist/OpenPelo-macOS-ARM.dmg" \
-          "dmg_source/"
-
-    - name: Sign DMG
-      run: |
-        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-ARM.dmg
-
-    - name: Notarize DMG
-      run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-ARM.dmg \
-          --apple-id "${{ secrets.AC_USERNAME }}" \
-          --password "${{ secrets.AC_PASSWORD }}" \
-          --team-id "${{ secrets.TEAM_ID }}" \
-          --wait
-
-    - name: Staple Ticket
-      run: |
-        xcrun stapler staple dist/OpenPelo-macOS-ARM.dmg
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-macOS-ARM
-        path: dist/OpenPelo-macOS-ARM.dmg
-
-  build-macos-intel:
-    needs: [bump-version]
-    runs-on: macos-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        architecture: 'x64'
-
-    - name: Install Rosetta
-      run: |
-        sudo softwareupdate --install-rosetta --agree-to-license
-    
-    - name: Install dependencies
-      run: |
-        arch -x86_64 python -m pip install --upgrade pip
-        arch -x86_64 python -m pip install nuitka zstandard certifi pillow
-        brew install create-dmg
-
-    - name: Install Apple Certificate
-      if: runner.os == 'macOS'
-      env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
-      run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-    
-    - name: Create macOS Icon
-      run: |
-        mkdir OpenPelo.iconset
-        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
-        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
-        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
-        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        # Explicitly output to Icon.icns
-        iconutil -c icns OpenPelo.iconset -o Icon.icns
-
-    - name: Build App Bundle
-      run: |
-        arch -x86_64 python -m nuitka \
-          --standalone \
-          --onefile \
-          --enable-plugin=tk-inter \
-          --assume-yes-for-downloads \
-          --include-package=certifi \
-          --include-data-file=apps_config.json=apps_config.json \
-          --include-data-file=usb_debug_steps.json=usb_debug_steps.json \
-          --include-data-file=wireless_adb_steps.json=wireless_adb_steps.json \
-          --include-data-dir=ADB=ADB \
-          --include-data-dir=platform-tools=platform-tools \
-          --macos-disable-console \
-          --output-dir=build/macos-intel \
-          --remove-output \
-          --macos-create-app-bundle \
-          --macos-app-name=OpenPelo \
-          --macos-app-icon=Icon.icns \
-          openpelo.py
-        
-        # Move to dist for further processing
-        mkdir -p dist
-        
-        # Find the generated app bundle (likely lowercase openpelo.app)
-        APP_BUNDLE=$(find build/macos-intel -maxdepth 1 -name "*.app" | head -n 1)
-        echo "Found generated bundle: $APP_BUNDLE"
-        
-        # Copy to dist/OpenPelo.app (Capitalized)
-        cp -R "$APP_BUNDLE" dist/OpenPelo.app
-
-        # FIX: Manually copy Icon.icns to Resources to ensure it shows up in the .app
-        mkdir -p dist/OpenPelo.app/Contents/Resources
-        cp Icon.icns dist/OpenPelo.app/Contents/Resources/Icon.icns
-        
-        # Safety Check: Generate Info.plist if Nuitka failed to create it
-        if [ ! -f "dist/OpenPelo.app/Contents/Info.plist" ]; then
-            echo "Info.plist missing, creating basic one..."
-            mkdir -p dist/OpenPelo.app/Contents
-            cat > dist/OpenPelo.app/Contents/Info.plist <<EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleExecutable</key>
-            <string>openpelo</string>
-            <key>CFBundleIconFile</key>
-            <string>Icon.icns</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.doudar.openpelo</string>
-            <key>CFBundleInfoDictionaryVersion</key>
-            <string>6.0</string>
-            <key>CFBundleName</key>
-            <string>OpenPelo</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0.0</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>10.13.0</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-        </dict>
-        </plist>
-        EOF
-        else
-            echo "Info.plist exists, updating identifiers..."
-            plutil -replace CFBundleIdentifier -string "com.doudar.openpelo" dist/OpenPelo.app/Contents/Info.plist
-            # Ensure the plist points to the lowercase binary 'openpelo' that Nuitka creates
-            plutil -replace CFBundleExecutable -string "openpelo" dist/OpenPelo.app/Contents/Info.plist
-        fi
-
-    - name: Sign App Bundle
-      run: |
-        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
-
-    # Zip the App Bundle for the Universal job to use later
-    - name: Prepare Intermediate Artifact
-      run: |
-        zip -r app.zip dist/OpenPelo.app
-
-    - name: Upload Intermediate App
-      uses: actions/upload-artifact@v4
-      with:
-        name: intermediate-app-intel
-        path: app.zip
-    
-    - name: Create DMG
-      run: |
-        mkdir dmg_source
-        cp -R dist/OpenPelo.app dmg_source/
-        
-        create-dmg \
-          --volname "OpenPelo Installer" \
-          --volicon "Icon.icns" \
-          --window-pos 200 120 \
-          --window-size 800 400 \
-          --icon-size 100 \
-          --icon "OpenPelo.app" 200 190 \
-          --hide-extension "OpenPelo.app" \
-          --app-drop-link 600 185 \
-          "dist/OpenPelo-macOS-Intel.dmg" \
-          "dmg_source/"
-
-    - name: Sign DMG
-      run: |
-        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-Intel.dmg
-
-    - name: Notarize DMG
-      run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-Intel.dmg \
-          --apple-id "${{ secrets.AC_USERNAME }}" \
-          --password "${{ secrets.AC_PASSWORD }}" \
-          --team-id "${{ secrets.TEAM_ID }}" \
-          --wait
-
-    - name: Staple Ticket
-      run: |
-        xcrun stapler staple dist/OpenPelo-macOS-Intel.dmg
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-macOS-Intel
-        path: dist/OpenPelo-macOS-Intel.dmg
-
-  build-macos-universal:
-    needs: [build-macos-arm, build-macos-intel]
-    runs-on: macos-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Install create-dmg
-      run: brew install create-dmg
-
-    - name: Download ARM App
-      uses: actions/download-artifact@v4
-      with:
-        name: intermediate-app-arm
-        path: arm_temp
-
-    - name: Download Intel App
-      uses: actions/download-artifact@v4
-      with:
-        name: intermediate-app-intel
-        path: intel_temp
-
-    - name: Install Apple Certificate
-      if: runner.os == 'macOS'
-      env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
-      run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-
-    - name: Create macOS Icon
-      run: |
-        mkdir OpenPelo.iconset
-        sips -z 16 16     images/Icon.png --out OpenPelo.iconset/icon_16x16.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_16x16@2x.png
-        sips -z 32 32     images/Icon.png --out OpenPelo.iconset/icon_32x32.png
-        sips -z 64 64     images/Icon.png --out OpenPelo.iconset/icon_32x32@2x.png
-        sips -z 128 128   images/Icon.png --out OpenPelo.iconset/icon_128x128.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_128x128@2x.png
-        sips -z 256 256   images/Icon.png --out OpenPelo.iconset/icon_256x256.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_256x256@2x.png
-        sips -z 512 512   images/Icon.png --out OpenPelo.iconset/icon_512x512.png
-        sips -z 1024 1024 images/Icon.png --out OpenPelo.iconset/icon_512x512@2x.png
-        # Explicitly output to Icon.icns
-        iconutil -c icns OpenPelo.iconset -o Icon.icns
-
-    - name: Create and Sign universal bundle
-      run: |
-        # Unzip intermediates
-        unzip arm_temp/app.zip -d arm_extracted
-        unzip intel_temp/app.zip -d intel_extracted
-        mkdir -p dist
-        
-        # Copy ARM app as base
-        cp -R arm_extracted/dist/OpenPelo.app dist/OpenPelo.app
-        
-        # Merge binaries
-        lipo -create \
-          arm_extracted/dist/OpenPelo.app/Contents/MacOS/openpelo \
-          intel_extracted/dist/OpenPelo.app/Contents/MacOS/openpelo \
-          -output dist/OpenPelo.app/Contents/MacOS/openpelo
-        
-        # Sign App
-        codesign --force --verbose --timestamp --options runtime --deep --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo.app
-
-    - name: Create DMG
-      run: |
-        mkdir dmg_source
-        cp -R dist/OpenPelo.app dmg_source/
-        
-        create-dmg \
-          --volname "OpenPelo Installer" \
-          --volicon "Icon.icns" \
-          --window-pos 200 120 \
-          --window-size 800 400 \
-          --icon-size 100 \
-          --icon "OpenPelo.app" 200 190 \
-          --hide-extension "OpenPelo.app" \
-          --app-drop-link 600 185 \
-          "dist/OpenPelo-macOS-universal.dmg" \
-          "dmg_source/"
-
-    - name: Sign DMG
-      run: |
-        codesign --force --verbose --timestamp --sign "${{ secrets.CODESIGN_IDENTITY }}" dist/OpenPelo-macOS-universal.dmg
-
-    - name: Notarize DMG
-      run: |
-        xcrun notarytool submit dist/OpenPelo-macOS-universal.dmg \
-          --apple-id "${{ secrets.AC_USERNAME }}" \
-          --password "${{ secrets.AC_PASSWORD }}" \
-          --team-id "${{ secrets.TEAM_ID }}" \
-          --wait
-
-    - name: Staple Ticket
-      run: |
-        xcrun stapler staple dist/OpenPelo-macOS-universal.dmg
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OpenPelo-macOS-universal
-        path: dist/OpenPelo-macOS-universal.dmg
-
-  create-release:
-    needs: [build-windows, build-linux, build-macos-arm, build-macos-intel, build-macos-universal]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - uses: actions/checkout@v3
-      
-    - name: Get version
-      id: get_version
-      run: |
-        VERSION=$(cat version.json | jq -r .version)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-    
-    - name: Upload Release Assets
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ steps.get_version.outputs.version }}
-        name: Release v${{ steps.get_version.outputs.version }}
-        files: |
-          OpenPelo-Windows/OpenPelo.exe
-          OpenPelo-Linux/OpenPelo-linux.tar.gz
-          OpenPelo-macOS-ARM/OpenPelo-macOS-ARM.dmg
-          OpenPelo-macOS-Intel/OpenPelo-macOS-Intel.dmg
-          OpenPelo-macOS-universal/OpenPelo-macOS-universal.dmg
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenPelo-Linux
+          path: dist/OpenPelo-Linux.tar.gz
