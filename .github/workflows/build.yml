@@ -104,6 +104,28 @@ jobs:
             "dist/OpenPelo-macOS.dmg" \
             "dmg_source/"
 
+      - name: Sign DMG
+        env: 
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        run: |
+          codesign --force --verbose --timestamp --sign "$CODESIGN_IDENTITY" dist/OpenPelo-macOS.dmg
+
+      - name: Notarize DMG
+        env:
+          AC_USERNAME: ${{ secrets.AC_USERNAME }}
+          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          xcrun notarytool submit dist/OpenPelo-macOS.dmg \
+            --apple-id "$AC_USERNAME" \
+            --password "$AC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+
+      - name: Staple Ticket
+        run: |
+          xcrun stapler staple dist/OpenPelo-macOS.dmg
+
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
