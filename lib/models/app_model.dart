@@ -19,7 +19,7 @@ class AppModel {
       name: name,
       description: json['description'] ?? '',
       url: json['url'] ?? '',
-      package: json['package'],
+      package: json['package'] ?? json['package_name'],
       abi: json['abi'],
     );
   }

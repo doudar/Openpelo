@@ -127,9 +127,20 @@ class AppProvider with ChangeNotifier {
   Future<String> _resolveDownloadUrl(String url, String? packageName) async {
     try {
       final uri = Uri.parse(url);
+      if (uri.host == 'github.com' && uri.pathSegments.length >= 2) {
+        final owner = uri.pathSegments[0];
+        final repo = uri.pathSegments[1];
+        if (uri.pathSegments.contains('releases') && uri.pathSegments.contains('latest')) {
+          final apiUrl = Uri.https('api.github.com', '/repos/$owner/$repo/releases/latest');
+          return _resolveDownloadUrl(apiUrl.toString(), packageName);
+        }
+      }
       if (uri.host.contains('api.github.com')) {
          _onLog("Resolving GitHub API URL...", 'info');
-         final response = await http.get(uri);
+         final response = await http.get(uri, headers: const {
+           'User-Agent': 'Openpelo/1.0',
+           'Accept': 'application/vnd.github+json',
+         });
          if (response.statusCode == 200) {
             final json = jsonDecode(response.body);
             final List<dynamic> assets = json['assets'] ?? [];
@@ -156,6 +167,80 @@ class AppProvider with ChangeNotifier {
     }
   }
 
+  Map<String, String> _buildDownloadHeaders(Uri uri) {
+    final headers = <String, String>{
+      // Some hosts block requests without a UA; keep this stable for all downloads.
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+    };
+
+    if (uri.host.contains('teslacoilapps.com')) {
+      headers['Referer'] = 'https://teslacoilapps.com/';
+    }
+
+    return headers;
+  }
+
+  Future<bool> _downloadToFile(Uri uri, File file) async {
+    final client = HttpClient();
+    client.userAgent = _buildDownloadHeaders(uri)['User-Agent'];
+    try {
+      final request = await client.getUrl(uri);
+      _buildDownloadHeaders(uri).forEach(request.headers.add);
+      request.followRedirects = true;
+      final response = await request.close();
+
+      if (response.statusCode != HttpStatus.ok) {
+        _onLog("Failed to download (Status: ${response.statusCode})", 'error');
+        return false;
+      }
+
+      if (!await file.parent.exists()) {
+        await file.parent.create(recursive: true);
+      }
+
+      final sink = file.openWrite();
+      await response.pipe(sink);
+      await sink.flush();
+      await sink.close();
+      return true;
+    } catch (e) {
+      _onLog("Download error: $e", 'error');
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<http.Response> _getWithRedirects(Uri uri) async {
+    final client = http.Client();
+    try {
+      var current = uri;
+      for (var i = 0; i < 5; i++) {
+        final request = http.Request('GET', current);
+        request.followRedirects = false;
+        request.headers.addAll(_buildDownloadHeaders(current));
+
+        final streamed = await client.send(request);
+        if (streamed.isRedirect) {
+          final location = streamed.headers['location'];
+          if (location == null) {
+            return http.Response.fromStream(streamed);
+          }
+          current = current.resolve(location);
+          continue;
+        }
+
+        return http.Response.fromStream(streamed);
+      }
+
+      return http.Response('Too many redirects', 508);
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> installSelectedApps(Future<bool> Function(String appName) onConfirmReinstall) async {
     if (selectedDevice == null) return;
     final appsToInstall = availableApps.values.where((a) => a.isSelected).toList();
@@ -169,22 +254,17 @@ class AppProvider with ChangeNotifier {
         
         final downloadUrl = await _resolveDownloadUrl(app.url, app.package);
         
-        _onLog("Downloading ${app.name} from $downloadUrl...", 'info');
-        final response = await http.get(Uri.parse(downloadUrl));
-        if (response.statusCode == 200) {
-           final tempDir = await getTemporaryDirectory();
-           // Ensure unique name or use package name to avoid conflicts/caching if needed
-           final filename = app.package ?? "${app.name.replaceAll(' ', '_')}.apk";
-           final apkPath = p.join(tempDir.path, filename);
-           final file = File(apkPath);
-           // Ensure directory exists
-           if (!await file.parent.exists()) {
-             await file.parent.create(recursive: true);
-           }
-           await file.writeAsBytes(response.bodyBytes);
-           
-           _onLog("Installing ${app.name}...", 'info');
-           String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
+          final downloadUri = Uri.parse(downloadUrl);
+          _onLog("Downloading ${app.name} from $downloadUrl...", 'info');
+          final tempDir = await getTemporaryDirectory();
+          // Ensure unique name or use package name to avoid conflicts/caching if needed
+          final filename = app.package ?? "${app.name.replaceAll(' ', '_')}.apk";
+          final apkPath = p.join(tempDir.path, filename);
+          final file = File(apkPath);
+          final ok = await _downloadToFile(downloadUri, file);
+          if (ok) {
+            _onLog("Installing ${app.name}...", 'info');
+            String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
            
            if (output.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
                String? conflictingPkg = app.package;
@@ -209,8 +289,6 @@ class AppProvider with ChangeNotifier {
            } else {
              _onLog("Error installing ${app.name}: $output", 'error');
            }
-        } else {
-           _onLog("Failed to download ${app.name} (Status: ${response.statusCode})", 'error');
         }
       }
     } catch (e) {
