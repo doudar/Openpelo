@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
 import '../services/config_service.dart';
 import '../models/app_model.dart';
@@ -23,6 +25,10 @@ class LogEntry {
 class AppProvider with ChangeNotifier {
   final AdbService _adbService;
   final ConfigService _configService = ConfigService();
+  static final Uri _openpeloLatestReleaseApiUri =
+      Uri.https('api.github.com', '/repos/doudar/openpelo/releases/latest');
+  static final Uri _openpeloReleasesPageUri =
+      Uri.parse('https://github.com/doudar/openpelo/releases/');
   static const Map<String, String> _githubApiHeaders = {
     'User-Agent': 'Openpelo/1.0',
     'Accept': 'application/vnd.github+json',
@@ -38,6 +44,11 @@ class AppProvider with ChangeNotifier {
   Process? _recordingProcess;
   bool isRecording = false;
   String? _saveLocation;
+  bool isCheckingForUpdate = false;
+  String? currentAppVersion;
+  String? latestAppVersion;
+  Uri latestReleasePageUrl = _openpeloReleasesPageUri;
+  String? updateCheckError;
 
   AppProvider() : _adbService = AdbService(onLog: (m, t) {}) {
     // Re-initialize AdbService with actual log handler
@@ -52,6 +63,8 @@ class AppProvider with ChangeNotifier {
       _checkDevices();
     });
     _loadSaveLocation();
+    _loadCurrentAppVersion();
+    checkForUpdates();
   }
 
   void _onLog(String message, String tag) {
@@ -63,6 +76,119 @@ class AppProvider with ChangeNotifier {
   void _setBusy(bool value) {
     isBusy = value;
     notifyListeners();
+  }
+
+  bool get isUpdateAvailable {
+    final current = currentAppVersion;
+    final latest = latestAppVersion;
+    if (current == null || latest == null) return false;
+    return _compareVersions(latest, current) > 0;
+  }
+
+  Future<void> openReleasesPage() async {
+    if (!await launchUrl(latestReleasePageUrl, mode: LaunchMode.externalApplication)) {
+      _onLog("Could not open releases page: $latestReleasePageUrl", 'error');
+    }
+  }
+
+  Future<void> checkForUpdates() async {
+    if (isCheckingForUpdate) return;
+
+    isCheckingForUpdate = true;
+    updateCheckError = null;
+    notifyListeners();
+
+    try {
+      currentAppVersion ??= await _getCurrentAppVersion();
+
+      final response = await _httpGetWithWindowsTlsFallback(
+        _openpeloLatestReleaseApiUri,
+        headers: _githubApiHeaders,
+      );
+
+      if (response.statusCode != HttpStatus.ok) {
+        updateCheckError =
+            'Failed to check updates (HTTP ${response.statusCode}).';
+        return;
+      }
+
+      final Map<String, dynamic> release =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final tag = (release['tag_name'] ?? '').toString().trim();
+      final name = (release['name'] ?? '').toString().trim();
+      final htmlUrl = (release['html_url'] ?? '').toString().trim();
+
+      final resolvedLatest = tag.isNotEmpty
+          ? tag
+          : (name.isNotEmpty ? name : '');
+
+      if (resolvedLatest.isEmpty) {
+        updateCheckError = 'Could not determine latest release version.';
+        return;
+      }
+
+      latestAppVersion = _normalizeVersion(resolvedLatest);
+      if (htmlUrl.isNotEmpty) {
+        latestReleasePageUrl = Uri.parse(htmlUrl);
+      }
+    } catch (e) {
+      updateCheckError = 'Update check failed: $e';
+      _onLog(updateCheckError!, 'error');
+    } finally {
+      isCheckingForUpdate = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadCurrentAppVersion() async {
+    if (currentAppVersion != null) return;
+
+    try {
+      currentAppVersion = await _getCurrentAppVersion();
+    } catch (e) {
+      _onLog('Unable to read current app version: $e', 'error');
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<String> _getCurrentAppVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    return _normalizeVersion(packageInfo.version);
+  }
+
+  String _normalizeVersion(String rawVersion) {
+    var value = rawVersion.trim();
+    if (value.startsWith('v') || value.startsWith('V')) {
+      value = value.substring(1);
+    }
+
+    final match = RegExp(r'\d+(?:\.\d+){0,3}').firstMatch(value);
+    return match?.group(0) ?? value;
+  }
+
+  int _compareVersions(String a, String b) {
+    final aParts = _normalizeVersion(a)
+        .split('.')
+        .where((p) => p.isNotEmpty)
+        .map((p) => int.tryParse(p) ?? 0)
+        .toList();
+    final bParts = _normalizeVersion(b)
+        .split('.')
+        .where((p) => p.isNotEmpty)
+        .map((p) => int.tryParse(p) ?? 0)
+        .toList();
+
+    final length = aParts.length > bParts.length ? aParts.length : bParts.length;
+    for (var index = 0; index < length; index++) {
+      final aPart = index < aParts.length ? aParts[index] : 0;
+      final bPart = index < bParts.length ? bParts[index] : 0;
+
+      if (aPart > bPart) return 1;
+      if (aPart < bPart) return -1;
+    }
+
+    return 0;
   }
 
   void _loadSaveLocation() async {

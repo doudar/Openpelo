@@ -19,6 +19,7 @@ dependencies:
   intl: ^0.20.2
   multicast_dns: ^0.3.3
   network_info_plus: ^7.0.0
+  package_info_plus: ^9.0.0
   path: ^1.9.1
   path_provider: ^2.1.5
   permission_handler: ^12.0.1

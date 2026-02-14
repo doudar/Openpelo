@@ -17,22 +17,42 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("OpenPelo - Free Your Peloton"),
+        title: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                "OpenPelo - Free Your Peloton",
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Version: ${provider.currentAppVersion ?? '...'}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
         actions: [
           PopupMenuButton<String>(
-            onSelected: (value) {
+            onSelected: (value) async {
               if (value == 'uninstall') {
                 if (provider.selectedDevice == null) {
                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
                 } else {
                    showDialog(context: context, builder: (_) => const PelotonUninstallerDialog());
                 }
+              } else if (value == 'check_updates') {
+                await provider.checkForUpdates();
               }
             },
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: 'uninstall',
                 child: Text('Uninstall Peloton Apps'),
+              ),
+              const PopupMenuItem(
+                value: 'check_updates',
+                child: Text('Check For Updates'),
               ),
             ],
             child: const Padding(
@@ -61,6 +81,45 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (provider.isUpdateAvailable)
+                    Card(
+                      color: Colors.amber[50],
+                      child: ListTile(
+                        leading: const Icon(Icons.system_update),
+                        title: Text(
+                          'Update available: ${provider.latestAppVersion}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          'Current version: ${provider.currentAppVersion ?? 'unknown'}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: provider.openReleasesPage,
+                          child: const Text('View Release'),
+                        ),
+                      ),
+                    ),
+                  if (provider.updateCheckError != null)
+                    Card(
+                      color: Colors.red[50],
+                      child: ListTile(
+                        leading: const Icon(Icons.warning_amber_rounded),
+                        title: const Text('Could not check for updates'),
+                        subtitle: Text(provider.updateCheckError!),
+                        trailing: TextButton(
+                          onPressed: provider.isCheckingForUpdate
+                              ? null
+                              : provider.checkForUpdates,
+                          child: const Text('Retry'),
+                        ),
+                      ),
+                    ),
+                  if (provider.isCheckingForUpdate)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (provider.isUpdateAvailable ||
+                      provider.updateCheckError != null ||
+                      provider.isCheckingForUpdate)
+                    const SizedBox(height: 10),
                   // Status & Device Selection
                    Row(
                     children: [
