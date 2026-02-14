@@ -23,6 +23,10 @@ class LogEntry {
 class AppProvider with ChangeNotifier {
   final AdbService _adbService;
   final ConfigService _configService = ConfigService();
+  static const Map<String, String> _githubApiHeaders = {
+    'User-Agent': 'Openpelo/1.0',
+    'Accept': 'application/vnd.github+json',
+  };
   
   List<LogEntry> logs = [];
   List<DeviceModel> devices = [];
@@ -53,6 +57,11 @@ class AppProvider with ChangeNotifier {
   void _onLog(String message, String tag) {
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.add(LogEntry('[$time]', message, tag));
+    notifyListeners();
+  }
+
+  void _setBusy(bool value) {
+    isBusy = value;
     notifyListeners();
   }
 
@@ -137,10 +146,11 @@ class AppProvider with ChangeNotifier {
       }
       if (uri.host.contains('api.github.com')) {
          _onLog("Resolving GitHub API URL...", 'info');
-         final response = await http.get(uri, headers: const {
-           'User-Agent': 'Openpelo/1.0',
-           'Accept': 'application/vnd.github+json',
-         });
+         final response = await _httpGetWithWindowsTlsFallback(
+           uri,
+           headers: _githubApiHeaders,
+         );
+
          if (response.statusCode == 200) {
             final json = jsonDecode(response.body);
             final List<dynamic> assets = json['assets'] ?? [];
@@ -183,11 +193,12 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<bool> _downloadToFile(Uri uri, File file) async {
+    final headers = _buildDownloadHeaders(uri);
     final client = HttpClient();
-    client.userAgent = _buildDownloadHeaders(uri)['User-Agent'];
+    client.userAgent = headers['User-Agent'];
     try {
       final request = await client.getUrl(uri);
-      _buildDownloadHeaders(uri).forEach(request.headers.add);
+      headers.forEach(request.headers.add);
       request.followRedirects = true;
       final response = await request.close();
 
@@ -206,6 +217,10 @@ class AppProvider with ChangeNotifier {
       await sink.close();
       return true;
     } catch (e) {
+      if (Platform.isWindows && _isWindowsTlsHandshakeError(e)) {
+        _onLog("TLS handshake failed. Retrying download with Windows curl...", 'info');
+        return _downloadToFileWithWindowsCurl(uri, file, headers: headers);
+      }
       _onLog("Download error: $e", 'error');
       return false;
     } finally {
@@ -213,32 +228,157 @@ class AppProvider with ChangeNotifier {
     }
   }
 
-  Future<http.Response> _getWithRedirects(Uri uri) async {
-    final client = http.Client();
+  bool _isWindowsTlsHandshakeError(Object error) {
+    if (error is HandshakeException) {
+      return true;
+    }
+
+    final text = error.toString().toLowerCase();
+    return text.contains('handshakeexception') ||
+        text.contains('ssl') ||
+        text.contains('tls') ||
+        text.contains('certificate_verify_failed') ||
+        text.contains('unable to get local issuer certificate');
+  }
+
+  Future<http.Response> _httpGetWithWindowsTlsFallback(
+    Uri uri, {
+    required Map<String, String> headers,
+  }) async {
     try {
-      var current = uri;
-      for (var i = 0; i < 5; i++) {
-        final request = http.Request('GET', current);
-        request.followRedirects = false;
-        request.headers.addAll(_buildDownloadHeaders(current));
-
-        final streamed = await client.send(request);
-        if (streamed.isRedirect) {
-          final location = streamed.headers['location'];
-          if (location == null) {
-            return http.Response.fromStream(streamed);
-          }
-          current = current.resolve(location);
-          continue;
+      return await http.get(uri, headers: headers);
+    } catch (e) {
+      if (Platform.isWindows && _isWindowsTlsHandshakeError(e)) {
+        _onLog("TLS handshake failed. Retrying request with Windows curl...", 'info');
+        final body = await _httpGetBodyWithWindowsCurl(uri, headers: headers);
+        if (body != null) {
+          return http.Response(body, HttpStatus.ok);
         }
+      }
+      rethrow;
+    }
+  }
 
-        return http.Response.fromStream(streamed);
+  List<String> _buildWindowsCurlArgs(
+    Uri uri, {
+    required Map<String, String> headers,
+    String? outputPath,
+  }) {
+    final args = <String>[
+      '--location',
+      '--silent',
+      '--show-error',
+      '--fail',
+      '--max-redirs',
+      '5',
+    ];
+
+    headers.forEach((key, value) {
+      args.addAll(['-H', '$key: $value']);
+    });
+
+    if (outputPath != null) {
+      args.addAll(['-o', outputPath]);
+    }
+
+    args.add(uri.toString());
+    return args;
+  }
+
+  Future<String?> _httpGetBodyWithWindowsCurl(
+    Uri uri, {
+    required Map<String, String> headers,
+  }) async {
+    if (!Platform.isWindows) return null;
+
+    try {
+      final args = _buildWindowsCurlArgs(uri, headers: headers);
+
+      final result = await Process.run('curl.exe', args);
+      if (result.exitCode == 0) {
+        return result.stdout.toString();
       }
 
-      return http.Response('Too many redirects', 508);
-    } finally {
-      client.close();
+      _onLog(
+        "Windows curl request failed (${result.exitCode}): ${result.stderr}",
+        'error',
+      );
+      return null;
+    } catch (e) {
+      _onLog("Windows curl request error: $e", 'error');
+      return null;
     }
+  }
+
+  Future<bool> _downloadToFileWithWindowsCurl(
+    Uri uri,
+    File file, {
+    required Map<String, String> headers,
+  }) async {
+    try {
+      if (!await file.parent.exists()) {
+        await file.parent.create(recursive: true);
+      }
+
+      final args = _buildWindowsCurlArgs(
+        uri,
+        headers: headers,
+        outputPath: file.path,
+      );
+
+      final result = await Process.run('curl.exe', args);
+      if (result.exitCode == 0 && await file.exists()) {
+        return true;
+      }
+
+      _onLog(
+        "Windows curl download failed (${result.exitCode}): ${result.stderr}",
+        'error',
+      );
+      return false;
+    } catch (e) {
+      _onLog("Windows curl download error: $e", 'error');
+      return false;
+    }
+  }
+
+  String? _extractConflictingPackageFromInstallOutput(
+    String output,
+    String? packageHint,
+  ) {
+    final match = RegExp(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures')
+        .firstMatch(output);
+    return match?.group(1) ?? packageHint;
+  }
+
+  Future<String> _resolveInstallConflictIfNeeded({
+    required String output,
+    required String appName,
+    required String? packageHint,
+    required Future<bool> Function(String appName) onConfirmReinstall,
+    required Future<String> Function() retryInstall,
+  }) async {
+    if (!output.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
+      return output;
+    }
+
+    final conflictingPkg = _extractConflictingPackageFromInstallOutput(
+      output,
+      packageHint,
+    );
+    if (conflictingPkg == null || selectedDevice == null) {
+      return output;
+    }
+
+    final shouldUninstall = await onConfirmReinstall(appName);
+    if (!shouldUninstall) {
+      return output;
+    }
+
+    _onLog("Uninstalling old version of $appName...", 'info');
+    await _adbService.uninstallPackage(selectedDevice!.serial, conflictingPkg);
+    _onLog("Retrying install of $appName...", 'info');
+    return retryInstall();
   }
 
   Future<void> installSelectedApps(Future<bool> Function(String appName) onConfirmReinstall) async {
@@ -246,8 +386,7 @@ class AppProvider with ChangeNotifier {
     final appsToInstall = availableApps.values.where((a) => a.isSelected).toList();
     if (appsToInstall.isEmpty) return;
 
-    isBusy = true;
-    notifyListeners();
+    _setBusy(true);
     
     try {
       for (final app in appsToInstall) {
@@ -265,24 +404,14 @@ class AppProvider with ChangeNotifier {
           if (ok) {
             _onLog("Installing ${app.name}...", 'info');
             String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
-           
-           if (output.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
-               String? conflictingPkg = app.package;
-               final match = RegExp(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures').firstMatch(output);
-               if (match != null) {
-                 conflictingPkg = match.group(1);
-               }
-               
-               if (conflictingPkg != null) {
-                  final shouldUninstall = await onConfirmReinstall(app.name);
-                  if (shouldUninstall) {
-                    _onLog("Uninstalling old version of ${app.name}...", 'info');
-                    await _adbService.uninstallPackage(selectedDevice!.serial, conflictingPkg);
-                    _onLog("Retrying install of ${app.name}...", 'info');
-                    output = await _adbService.installApk(selectedDevice!.serial, apkPath);
-                  }
-               }
-           }
+
+            output = await _resolveInstallConflictIfNeeded(
+              output: output,
+              appName: app.name,
+              packageHint: app.package,
+              onConfirmReinstall: onConfirmReinstall,
+              retryInstall: () => _adbService.installApk(selectedDevice!.serial, apkPath),
+            );
 
            if (output.contains('Success')) {
              _onLog("Successfully installed ${app.name}", 'info');
@@ -294,8 +423,7 @@ class AppProvider with ChangeNotifier {
     } catch (e) {
       _onLog("Installation failed: $e", 'error');
     } finally {
-      isBusy = false;
-      notifyListeners();
+      _setBusy(false);
     }
   }
 
@@ -309,33 +437,19 @@ class AppProvider with ChangeNotifier {
     if (result != null) {
       final path = result.files.single.path;
       if (path != null) {
-        isBusy = true;
-        notifyListeners();
+        _setBusy(true);
         try {
           final filename = p.basename(path);
           _onLog("Installing local APK: $filename", 'info');
           String output = await _adbService.installApk(selectedDevice!.serial, path);
-          
-          if (output.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
-             // For local APK, we might not know the package name easily without a parser, 
-             // but we can try to extract it from error or ask user to provide it?
-             // Actually parsing the error usually gives the package name.
-             String? conflictingPkg;
-             final match = RegExp(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures').firstMatch(output);
-             if (match != null) {
-               conflictingPkg = match.group(1);
-             }
-             
-             if (conflictingPkg != null) {
-                final shouldUninstall = await onConfirmReinstall(filename);
-                if (shouldUninstall) {
-                  _onLog("Uninstalling old version...", 'info');
-                  await _adbService.uninstallPackage(selectedDevice!.serial, conflictingPkg);
-                  _onLog("Retrying install...", 'info');
-                  output = await _adbService.installApk(selectedDevice!.serial, path);
-                }
-             }
-          }
+
+          output = await _resolveInstallConflictIfNeeded(
+            output: output,
+            appName: filename,
+            packageHint: null,
+            onConfirmReinstall: onConfirmReinstall,
+            retryInstall: () => _adbService.installApk(selectedDevice!.serial, path),
+          );
 
           if (output.contains('Success')) {
             _onLog("Successfully installed local APK", 'info');
@@ -345,8 +459,7 @@ class AppProvider with ChangeNotifier {
         } catch (e) {
            _onLog("Failed install: $e", 'error');
         } finally {
-          isBusy = false;
-          notifyListeners();
+          _setBusy(false);
         }
       }
     }
@@ -370,8 +483,7 @@ class AppProvider with ChangeNotifier {
       notifyListeners();
       
       // Pull
-      isBusy = true;
-      notifyListeners();
+      _setBusy(true);
       try {
          final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
          final filename = "recording_$date.mp4";
@@ -381,8 +493,7 @@ class AppProvider with ChangeNotifier {
       } catch (e) {
          _onLog("Failed to save recording: $e", 'error');
       } finally {
-        isBusy = false;
-        notifyListeners();
+        _setBusy(false);
       }
 
     } else {
@@ -439,8 +550,7 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> connectWireless(String ip, String port, String code, String connectionPort) async {
-    isBusy = true;
-    notifyListeners();
+    _setBusy(true);
     try {
       if (code.isNotEmpty && port.isNotEmpty) {
         _onLog("Pairing with $ip:$port...", 'info');
@@ -458,14 +568,12 @@ class AppProvider with ChangeNotifier {
     } catch (e) {
       _onLog("Wireless connection failed: $e", 'error');
     } finally {
-      isBusy = false;
-      notifyListeners();
+      _setBusy(false);
     }
   }
 
   Future<List<Map<String, String>>> scanForWirelessDevices({int? port}) async {
-    isBusy = true;
-    notifyListeners();
+    _setBusy(true);
     List<Map<String, String>> devices = [];
     try {
        _onLog("Scanning for wireless devices (mDNS)...", 'info');
@@ -495,15 +603,13 @@ class AppProvider with ChangeNotifier {
       _onLog("Scan error: $e", 'error');
       return devices;
     } finally {
-       isBusy = false;
-       notifyListeners();
+       _setBusy(false);
     }
   }
 
   Future<List<String>> scanPelotonPackages() async {
     if (selectedDevice == null) return [];
-    isBusy = true;
-    notifyListeners();
+    _setBusy(true);
     try {
       _onLog("Scanning for Peloton packages...", 'info');
       final allPackages = await _adbService.listPackages(selectedDevice!.serial);
@@ -524,16 +630,14 @@ class AppProvider with ChangeNotifier {
       _onLog("Scan failed: $e", 'error');
       return [];
     } finally {
-      isBusy = false;
-      notifyListeners();
+      _setBusy(false);
     }
   }
 
   Future<Map<String, int>> uninstallPelotonPackages(List<String> packages) async {
     if (selectedDevice == null) return {'success': 0, 'fail': 0};
-    
-    isBusy = true;
-    notifyListeners();
+
+    _setBusy(true);
     
     int success = 0;
     int fail = 0;
@@ -561,8 +665,7 @@ class AppProvider with ChangeNotifier {
     } catch (e) {
       _onLog("Batch uninstall error: $e", 'error');
     } finally {
-      isBusy = false;
-      notifyListeners();
+      _setBusy(false);
     }
     
     return {'success': success, 'fail': fail};
