@@ -10,9 +10,9 @@ on:
 jobs:
   bump-version:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
+      build_ref: ${{ steps.bump.outputs.build_ref }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -28,32 +28,40 @@ jobs:
         id: bump
         run: |
           VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
-          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
-          MAJOR="${VERSION_PARTS[0]}"
-          MINOR="${VERSION_PARTS[1]}"
-          PATCH="${VERSION_PARTS[2]}"
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "{\"version\": \"$NEW_VERSION\"}" > version.json
-          
-          # Update pubspec.yaml
-          sed -i "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
-          
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          git add version.json pubspec.yaml
-          git commit -m "Bump version to $NEW_VERSION"
-          
-          git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
-          git push origin main --tags
-          git push
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+            MAJOR="${VERSION_PARTS[0]}"
+            MINOR="${VERSION_PARTS[1]}"
+            PATCH="${VERSION_PARTS[2]}"
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+            echo "{\"version\": \"$NEW_VERSION\"}" > version.json
+            sed -i "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add version.json pubspec.yaml
+            git commit -m "Bump version to $NEW_VERSION"
+
+            git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
+            git push origin main --tags
+            git push
+
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "build_ref=refs/tags/v$NEW_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "build_ref=$GITHUB_SHA" >> $GITHUB_OUTPUT
+          fi
   build-windows:
+    needs: bump-version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.build_ref }}
 
       - name: Setup Flutter SDK
         uses: flutter-actions/setup-flutter@v3
@@ -84,9 +92,12 @@ jobs:
           path: dist/OpenPelo_Setup_Windows.exe
 
   build-macos:
+    needs: bump-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.build_ref }}
 
       - name: Setup Flutter SDK
         uses: flutter-actions/setup-flutter@v3
@@ -175,9 +186,12 @@ jobs:
           path: dist/OpenPelo-macOS.dmg
 
   build-linux:
+    needs: bump-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.build_ref }}
 
       - name: Setup Linux Dependencies
         run: |
