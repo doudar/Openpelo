@@ -3,7 +3,7 @@
         "SmartSpin2k": {
             "url": "https://api.github.com/repos/doudar/SS2kConfigApp/releases/latest",
             "package_name": "SS2kConfigApp.apk",
-            "description": "Configuration and ERG workout app for the SmartSpin2k",
+            "description": "Configuration and ERG workout app for the SmartSpin2k\nSmartSpin2k adds automatic resistance and virtual shifting to spin bikes",
             "abi": "arm64-v8a"
         },
         "Grupetto": {
@@ -21,7 +21,13 @@
         "Kvaesitso": {
             "url": "https://f-droid.org/repo/de.mm20.launcher2.release_2025042101.apk",
             "package_name": "de.mm20.launcher2.release_2025042101.apk",
-            "description": "Open Source Launcher. Install This *OR* Nova. You probably don't want both",
+            "description": "Open Source Launcher.",
+            "abi": "arm64-v8a"
+        },
+        "Lawnchair Launcher": {
+            "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/v15.0.0-beta2/Lawnchair.15.0.0.Beta.2.apk",
+            "package_name": "Lawnchair.15.0.0.Beta.2.apk",
+            "description": "Open Source launcher.\nRotate screen in app settings behavior-> screen rotation",
             "abi": "arm64-v8a"
         },
         "FireFox Focus": {
@@ -51,13 +57,13 @@
         "Moonlight Streaming": {
             "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.1/app-nonRoot-release.apk",
             "package_name": "app-nonRoot-release.apk",
-            "description": "Streaming Client For Sunshine",
+            "description": "Stream training apps (or your Desktop) to your Peloton\nYou'll need to install Sunshine Streaming Server on your PC or Mac",
             "abi": "arm64-v8a"
         },
         "MaterialFiles": {
             "url": "https://github.com/zhanghai/MaterialFiles/releases/latest/download/app-release-universal.apk",
             "package_name": "app-release-universal.apk",
-            "description": "An open source Material Design file manager, for Android 5.0+.",
+            "description": "An open source file manager, for Android 5.0+.",
             "abi": "arm64-v8a"
         },
         "FDroid Gen 1": {
@@ -70,6 +76,12 @@
             "url": "https://f-droid.org/repo/fr.neamar.kiss_211.apk",
             "package_name": "fr.neamar.kiss_211.apk",
             "description": "Fast, lightweight launcher for Gen 1",
+            "abi": "armeabi-v7a"
+        },
+        "Lawnchair Launcher Gen 1": {
+            "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/1.2.0.1884/Lawnchair-1.2.0.1884.apk",
+            "package_name": "Lawnchair-1.2.0.1884.apk",
+            "description": "Pixel Launcher features for Gen 1 - Lawnchair v1 (last version supporting older Android)\nRotate screen in app settings behavior-> screen rotation",
             "abi": "armeabi-v7a"
         },
         "Firefox ESR": {
@@ -131,6 +143,12 @@
             "package_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
             "description": "Internet radio player for Gen 1 - Thousands of stations for your workout",
             "abi": "armeabi-v7a"
+        },
+        "Steam Link": {
+            "url": "https://media.steampowered.com/steamlink/android/latest/steamlink-android.apk",
+            "package_name": "steamlink-android.apk",
+            "description": "Stream Steam games from your PC to the Peloton over your local network\nRequires Steam on your PC\nAdd training programs to your library using 'add non steam game option'",
+            "abi": "arm64-v8a"
         }
     }
 }

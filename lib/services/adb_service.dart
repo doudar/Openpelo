@@ -312,6 +312,210 @@ class AdbService {
      await runAdbCommand(['-s', serial, 'tcpip', '5555']);
   }
 
+  /// Enable wireless debugging quick settings tile on the device.
+  Future<bool> enableWirelessDebugging(String serial) async {
+    if (isMobile) return false;
+    try {
+      // Get current QS tiles
+      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'secure', 'sysui_qs_tiles']);
+      final currentTiles = result.stdout.toString().trim();
+      
+      if (currentTiles.contains('wireless_debugging')) {
+        onLog("Wireless debugging tile already present.", 'info');
+      } else {
+        final newTiles = currentTiles.isEmpty || currentTiles == 'null'
+            ? 'wireless_debugging'
+            : '$currentTiles,wireless_debugging';
+        await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'secure', 'sysui_qs_tiles', newTiles]);
+        onLog("Added wireless_debugging to quick settings tiles.", 'info');
+      }
+      
+      // Also enable the wireless debugging setting itself
+      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'global', 'adb_wifi_enabled', '1']);
+      onLog("Enabled wireless ADB (adb_wifi_enabled=1).", 'info');
+      
+      return true;
+    } catch (e) {
+      onLog("Failed to enable wireless debugging: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Enable stay awake while charging.
+  Future<bool> enableStayAwake(String serial) async {
+    if (isMobile) return false;
+    try {
+      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'global', 'stay_on_while_plugged_in', '3']);
+      onLog("Enabled stay awake while charging.", 'info');
+      return true;
+    } catch (e) {
+      onLog("Failed to enable stay awake: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Set the device display rotation.
+  /// 0 = natural (portrait), 1 = 90° (landscape), 2 = 180°, 3 = 270° (landscape flipped)
+  Future<bool> setRotation(String serial, int rotation) async {
+    if (isMobile) return false;
+    try {
+      // Disable auto-rotation so the fixed rotation takes effect
+      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0']);
+      // Set rotation value (0-3)
+      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'user_rotation', '$rotation']);
+      onLog("Set display rotation to $rotation.", 'info');
+      return true;
+    } catch (e) {
+      onLog("Failed to set rotation: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Get the current display rotation value (0-3).
+  Future<int> getRotation(String serial) async {
+    if (isMobile) return 0;
+    try {
+      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'system', 'user_rotation']);
+      return int.tryParse(result.stdout.toString().trim()) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Get whether auto-rotation (accelerometer) is enabled.
+  Future<bool> getAutoRotation(String serial) async {
+    if (isMobile) return false;
+    try {
+      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'system', 'accelerometer_rotation']);
+      return result.stdout.toString().trim() == '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Enable or disable auto-rotation (accelerometer).
+  Future<bool> setAutoRotation(String serial, bool enabled) async {
+    if (isMobile) return false;
+    try {
+      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'accelerometer_rotation', enabled ? '1' : '0']);
+      onLog("Auto-rotation ${enabled ? 'enabled' : 'disabled'}.", 'info');
+      return true;
+    } catch (e) {
+      onLog("Failed to set auto-rotation: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Get installed launcher (home) apps on the device.
+  /// Returns a list of maps with 'package' and 'label' keys.
+  Future<List<Map<String, String>>> getInstalledLaunchers(String serial) async {
+    if (isMobile) return [];
+    try {
+      final result = await runAdbCommand([
+        '-s', serial, 'shell', 'pm', 'query-activities',
+        '--components', '-a', 'android.intent.action.MAIN',
+        '-c', 'android.intent.category.HOME'
+      ]);
+      final output = result.stdout.toString().trim();
+      final launchers = <Map<String, String>>[];
+      final seen = <String>{};
+
+      for (var line in output.split('\n')) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+        final pkg = line.contains('/') ? line.split('/')[0] : line;
+        if (pkg.isNotEmpty && seen.add(pkg)) {
+          final label = await _getAppLabel(serial, pkg);
+          launchers.add({
+            'package': pkg,
+            'label': label ?? pkg,
+          });
+        }
+      }
+
+      // Fallback if query-activities returned nothing
+      if (launchers.isEmpty) {
+        final result2 = await runAdbCommand([
+          '-s', serial, 'shell', 'cmd', 'package', 'resolve-activity',
+          '--components', '-a', 'android.intent.action.MAIN',
+          '-c', 'android.intent.category.HOME'
+        ]);
+        final output2 = result2.stdout.toString().trim();
+        for (var line in output2.split('\n')) {
+          line = line.trim();
+          if (line.isEmpty) continue;
+          final pkg = line.contains('/') ? line.split('/')[0] : line;
+          if (pkg.isNotEmpty && seen.add(pkg)) {
+            final label = await _getAppLabel(serial, pkg);
+            launchers.add({
+              'package': pkg,
+              'label': label ?? pkg,
+            });
+          }
+        }
+      }
+
+      return launchers;
+    } catch (e) {
+      onLog("Failed to list launchers: $e", 'error');
+      return [];
+    }
+  }
+
+  /// Open the app info / settings page for a specific package on the device.
+  Future<bool> openAppSettings(String serial, String packageName) async {
+    if (isMobile) return false;
+    try {
+      await runAdbCommand([
+        '-s', serial, 'shell', 'am', 'start',
+        '-a', 'android.settings.APPLICATION_DETAILS_SETTINGS',
+        '-d', 'package:$packageName'
+      ]);
+      onLog("Opened app settings for $packageName on device", 'info');
+      return true;
+    } catch (e) {
+      onLog("Failed to open app settings: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Get a friendly app label for a package.
+  Future<String?> _getAppLabel(String serial, String pkg) async {
+    try {
+      final result = await runAdbCommand([
+        '-s', serial, 'shell', 'dumpsys', 'package', pkg
+      ]);
+      final output = result.stdout.toString();
+      final match = RegExp(r'targetSdk=.*?\n\s+.*?label[=:]([^\n]+)', caseSensitive: false).firstMatch(output);
+      if (match != null) {
+        final label = match.group(1)?.trim();
+        if (label != null && label.isNotEmpty && !label.startsWith('0x')) return label;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Get the WiFi IP address of a connected device via its shell.
+  Future<String?> getDeviceIp(String serial) async {
+    if (isMobile) return null;
+    try {
+      final result = await runAdbCommand(['-s', serial, 'shell', 'ip', 'route']);
+      final output = result.stdout.toString();
+      // Look for "src <IP>" in the output of `ip route`
+      final match = RegExp(r'src\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output);
+      if (match != null) return match.group(1);
+
+      // Fallback: try `ip addr show wlan0`
+      final result2 = await runAdbCommand(['-s', serial, 'shell', 'ip', 'addr', 'show', 'wlan0']);
+      final output2 = result2.stdout.toString();
+      final match2 = RegExp(r'inet\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output2);
+      if (match2 != null) return match2.group(1);
+    } catch (e) {
+      onLog("Failed to get device IP: $e", 'error');
+    }
+    return null;
+  }
+
   Future<void> connectWifi(String ip, {String port = '5555'}) async {
     if (isMobile) {
       // For mobile 'connect', checking connectivity is basically trying a command
@@ -398,7 +602,7 @@ class AdbService {
         if (parts.length < 3) continue;
 
         final instanceName = parts[0];
-        // serviceType is parts[1] (e.g. _adb-tls-pairing._tcp.)
+        final serviceType = parts.length > 1 ? parts[1] : ''; // e.g. _adb-tls-pairing._tcp.
         final hostPart = parts.last; // ip:port
 
         String? ip;
@@ -415,6 +619,7 @@ class AdbService {
             'name': instanceName,
             'ip': ip,
             'port': port,
+            'type': serviceType,
           });
         }
       }

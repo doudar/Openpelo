@@ -67,9 +67,14 @@ class AppProvider with ChangeNotifier {
     checkForUpdates();
   }
 
+  static const int _maxLogLines = 300;
+
   void _onLog(String message, String tag) {
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.add(LogEntry('[$time]', message, tag));
+    if (logs.length > _maxLogLines) {
+      logs = logs.sublist(logs.length - _maxLogLines);
+    }
     notifyListeners();
   }
 
@@ -695,6 +700,133 @@ class AppProvider with ChangeNotifier {
       _onLog("Wireless connection failed: $e", 'error');
     } finally {
       _setBusy(false);
+    }
+  }
+
+  /// Enable wireless ADB on a USB-connected device.
+  /// Switches it to tcpip mode, discovers its IP, and connects wirelessly.
+  Future<String?> enableWirelessViaUsb(String serial) async {
+    _setBusy(true);
+    try {
+      _onLog("Switching $serial to TCP/IP mode on port 5555...", 'info');
+      await _adbService.connectTcpIp(serial);
+      
+      // Give the device a moment to restart in tcpip mode
+      await Future.delayed(const Duration(seconds: 2));
+      
+      _onLog("Querying device IP address...", 'info');
+      final ip = await _adbService.getDeviceIp(serial);
+      if (ip == null || ip.isEmpty) {
+        _onLog("Could not determine device IP. Make sure the device is connected to WiFi.", 'error');
+        return null;
+      }
+      
+      _onLog("Device IP: $ip. Connecting wirelessly...", 'info');
+      await _adbService.connectWifi(ip, port: '5555');
+      
+      _onLog("Wireless connection established. You can now unplug the USB cable.", 'status');
+      
+      // Wait a bit and refresh device list
+      await Future.delayed(const Duration(seconds: 2));
+      await _checkDevices();
+      
+      return ip;
+    } catch (e) {
+      _onLog("Failed to enable wireless ADB via USB: $e", 'error');
+      return null;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Run developer option toggles on the selected device.
+  /// Returns a map of option name → success/failure.
+  Future<Map<String, bool>> enableDeveloperSettings({
+    required String serial,
+    bool wirelessDebugging = false,
+    bool stayAwake = false,
+  }) async {
+    _setBusy(true);
+    final results = <String, bool>{};
+    try {
+      if (wirelessDebugging) {
+        results['Wireless Debugging'] = await _adbService.enableWirelessDebugging(serial);
+      }
+      if (stayAwake) {
+        results['Stay Awake While Charging'] = await _adbService.enableStayAwake(serial);
+      }
+    } catch (e) {
+      _onLog("Error enabling developer settings: $e", 'error');
+    } finally {
+      _setBusy(false);
+    }
+    return results;
+  }
+
+  /// Get installed launchers on the selected device.
+  Future<List<Map<String, String>>> getInstalledLaunchers() async {
+    if (selectedDevice == null) return [];
+    _setBusy(true);
+    try {
+      return await _adbService.getInstalledLaunchers(selectedDevice!.serial);
+    } catch (e) {
+      _onLog("Error getting launchers: $e", 'error');
+      return [];
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Open the app info settings page for a specific package on the device.
+  Future<bool> openAppSettings(String packageName) async {
+    if (selectedDevice == null) return false;
+    try {
+      return await _adbService.openAppSettings(selectedDevice!.serial, packageName);
+    } catch (e) {
+      _onLog("Error opening app settings: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Set the device display rotation (0-3).
+  Future<bool> setRotation(int rotation) async {
+    if (selectedDevice == null) return false;
+    try {
+      return await _adbService.setRotation(selectedDevice!.serial, rotation);
+    } catch (e) {
+      _onLog("Error setting rotation: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Get the current device display rotation (0-3).
+  Future<int> getRotation() async {
+    if (selectedDevice == null) return 0;
+    try {
+      return await _adbService.getRotation(selectedDevice!.serial);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Get whether auto-rotation is enabled on the device.
+  Future<bool> getAutoRotation() async {
+    if (selectedDevice == null) return false;
+    try {
+      return await _adbService.getAutoRotation(selectedDevice!.serial);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Enable or disable auto-rotation on the device.
+  Future<bool> setAutoRotation(bool enabled) async {
+    if (selectedDevice == null) return false;
+    try {
+      return await _adbService.setAutoRotation(selectedDevice!.serial, enabled);
+    } catch (e) {
+      _onLog("Error setting auto-rotation: $e", 'error');
+      return false;
     }
   }
 

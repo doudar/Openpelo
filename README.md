@@ -1,14 +1,18 @@
 # OpenPelo
 <img src="./images/Icon.png" alt="icon" width="150"/>
 
-OpenPelo is a cross-platform tool for installing additional apps on your Peloton device. This installer automatically handles ADB setup and provides an easy-to-use interface for installing apps, combined with a step-by-step guide to enter developer mode. Combine this with [SmartSpin2k](https://Github.com/doudar/SmartSpin2k/) which adds automatic resistance, and virtual shifting for the ultimate Zwift setup. 
+OpenPelo is an easy-to-use app installer and device manager for **any Android device** — workout machines (Peloton, Echelon, NordicTrack, etc.), tablets, phones, and more. It handles ADB setup automatically, walks you through enabling developer mode, and provides a curated library of apps ideal for fitness equipment screens.
+
+While OpenPelo works with any Android device, it's especially focused on making workout machines more versatile by providing streaming apps, custom launchers, file managers, and fitness tools — all installable with a few clicks over USB or WiFi.
+
+Combine this with [SmartSpin2k](https://Github.com/doudar/SmartSpin2k/) to add automatic resistance and virtual shifting to your spin bike for the ultimate Zwift setup.
   
 ![image](./images/OpenPelo.png)
+
 ## Requirements
 
-- Python 3.6 or higher
-- USB cable to connect your Peloton (for initial setup), or WiFi network (for wireless connection)
-- USB debugging enabled on your Peloton
+- USB cable (for initial setup) or WiFi network (for wireless connection)
+- USB debugging enabled on your Android device
 
 ## Installation
 Watch on YouTube:
@@ -31,36 +35,36 @@ Watch on YouTube:
 
 ## Usage
 
+### Supported Devices
+
+OpenPelo works with any Android device that supports USB debugging, including:
+- **Workout Machines:** Peloton Bike/Tread, Echelon, NordicTrack, Bowflex, and other Android-based fitness equipment
+- **Tablets & Phones:** Any Android tablet, phone, or TV device
+- **Gen 1 Support:** Older devices with armeabi-v7a architecture are supported with dedicated app versions
+
 ### Option 1: USB Connection (Recommended for First Setup)
-1. Connect your Peloton to your computer via USB
-2. Enable USB debugging on your Peloton:
-   - Make sure your bike sensor cable is connected to the Peloton Tablet.
-   - Go to Settings, system menu and perform a Firmware Reset.
-   - Finish the initial setup and select "Skip Home Installation"
-   - Go to Settings
-   - Tap on Device Preferences
-   - Tap 7 times on Build Number to enable Developer Options
-   - Go back to Settings
-   - Tap on Developer Options
-   - Enable USB debugging
-   - Disable Verify apps over USB
-   - Enable Gabeldorsche
-   - Go into your system, Apps, select system in the top right corner.
-   - Force quit the App with the Peloton logo named "Device Management"
-   - Plug your computer into the Peloton using a micro USB-B cable.  
-   - Select "always allow this computer" and allow USB debugging. 
+1. Connect your Android device to your computer via USB
+2. Enable USB debugging on your device:
+   - Go to Settings → About (or Device Preferences)
+   - Tap 7 times on **Build Number** to enable Developer Options
+   - Go back to Settings → Developer Options
+   - Enable **USB debugging**
+   - *(Optional)* Disable "Verify apps over USB" for faster installs
+   
+   > **Peloton-specific steps:** Make sure your bike sensor cable is connected, perform a Firmware Reset from Settings → System, finish setup and select "Skip Home Installation", enable **Gabeldorsche** in Developer Options, and force quit the "Device Management" app (found in Settings → Apps → System).
+
 3. Run OpenPelo:
    - Double-click the downloaded executable
-   - The installer will automatically check for your device
+   - The installer will automatically detect your device
    - Wait for the "✅ Device connected" status
-   - Select the apps you want to install by checking the boxes
+   - Select the apps you want to install
    - Click "Install Selected Apps" and wait for the installation to complete
 
 ### Option 2: Wireless ADB Connection
-Once you have enabled Developer Options (see Option 1), you can connect wirelessly:
+Once Developer Options are enabled (see above), you can connect wirelessly:
 
-1. **Enable Wireless Debugging on your Peloton:**
-   - Make sure your Peloton and computer are on the same WiFi network
+1. **Enable Wireless Debugging:**
+   - Ensure your device and computer are on the same WiFi network
    - Go to Settings → Developer Options
    - Enable "Wireless debugging"
    - Tap on "Wireless debugging" text to open settings
@@ -69,7 +73,7 @@ Once you have enabled Developer Options (see Option 1), you can connect wireless
    - Run OpenPelo
    - Click the "📶 Connect via WiFi" button
    - Follow the step-by-step guide
-   - When prompted, tap "Pair device with pairing code" on your Peloton
+   - When prompted, tap "Pair device with pairing code" on your device
    - Enter the displayed IP address, port, and pairing code into OpenPelo
    - Click "Connect"
    - Wait for "Successfully connected!" message
@@ -77,20 +81,19 @@ Once you have enabled Developer Options (see Option 1), you can connect wireless
 3. **Use OpenPelo wirelessly:**
    - Once connected, you can use all features wirelessly
    - Select apps and install them as you would with USB
-   - Take screenshots and record screen wirelessly
 
 ## Features
 
-- Modern graphical user interface
-- USB and Wireless ADB connection support
-- Real-time device connection status
-- Visual progress indicators
-- Easy app selection with checkboxes
-- Automatic ADB installation and setup
-- Cross-platform compatibility (Windows, Mac, Linux)
-- Automatic app downloading and installation
-- Configuration-based app management
-- Screen recording and screenshot utilities
+- **Easy-to-use interface** — No technical knowledge required
+- **Works with any Android device** — Workout machines, tablets, phones, and more
+- **USB and WiFi connections** — Connect via USB for initial setup, then go wireless
+- **Curated app library** — Launchers, streaming apps, fitness tools, file managers, and more
+- **Built-in device tools** — Screen rotation, developer settings, default launcher management, app uninstallation
+- **Automatic ADB setup** — No need to install or configure ADB manually
+- **Cross-platform** — Runs on Windows, Mac, and Linux
+- **Gen 1 device support** — Dedicated app versions for older armeabi-v7a devices
+- **mDNS device discovery** — Automatically scan for devices on your network
+- **Configuration-based app management** — Easily add new apps via JSON config
 
 ## For Developers
 
@@ -199,7 +202,7 @@ If you need to create a build outside of GitHub Actions:
 
 1. "❌ No device detected"
    - Ensure USB cable is properly connected
-   - Check that USB debugging is enabled
+   - Check that USB debugging is enabled on your device
    - Try a different USB cable or port
    - Click the "🔄 Refresh" button after fixing the connection
 
@@ -213,14 +216,14 @@ If you need to create a build outside of GitHub Actions:
    - If an app fails to install, check your device's storage space
    - Ensure your internet connection is stable
    - Try installing apps one at a time
-   - Check the error message shown in the popup for specific issues
+   - Check the error message in the log panel for specific issues
 
 4. Wireless Connection Issues
    - "Pairing Failed"
-     - Verify your Peloton and computer are on the same WiFi network
+     - Verify your device and computer are on the same WiFi network
      - Double-check the IP address, port, and pairing code
-     - Make sure wireless debugging is still enabled on your Peloton
-     - Try generating a new pairing code on your Peloton
+     - Make sure wireless debugging is still enabled on your device
+     - Try generating a new pairing code
    - "Connection Timeout"
      - Check your WiFi connection strength
      - Ensure no firewall is blocking the connection
@@ -228,7 +231,7 @@ If you need to create a build outside of GitHub Actions:
    - "Connection Failed after pairing"
      - The device may have disconnected. Try clicking "🔄 Refresh"
      - Try connecting again using the "📶 Connect via WiFi" button
-     - Restart wireless debugging on your Peloton and try again
+     - Restart wireless debugging on your device and try again
 
 ## Security Note
 
@@ -238,7 +241,7 @@ This installer only downloads apps from trusted sources specified in the configu
 
 OpenPelo is an independent, open-source project and is not affiliated with, associated with, authorized by, endorsed by, or in any way officially connected with Peloton Interactive, Inc., or any of its subsidiaries or affiliates. The official Peloton website can be found at [https://www.onepeloton.com](https://www.onepeloton.com).
 
-The name "Peloton" as well as related names, marks, emblems, and images are registered trademarks of their respective owners. This tool is provided for educational and experimental purposes only. Use of OpenPelo is at your own risk; the developers assume no liability for any damage to your device, voiding of warranties, or other issues that may result from its use.
+All product and company names including but not limited to "Peloton" are trademarks or registered trademarks of their respective holders. This tool is provided for educational and experimental purposes only. Use of OpenPelo is at your own risk; the developers assume no liability for any damage to your device, voiding of warranties, or other issues that may result from its use.
 
 ## License
 

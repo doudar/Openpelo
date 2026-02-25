@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -7,6 +8,16 @@ import '../widgets/guide_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
 import '../widgets/screen_mirror_dialog.dart';
 import 'wireless_connect_screen.dart';
+
+const _taglines = [
+  'Your Machine, Your Apps',
+  'Free Your Workout',
+  'Unlock Your Machine',
+  'Free Your Fitness Screen',
+  'Ride Without Limits',
+];
+
+final _tagline = _taglines[Random().nextInt(_taglines.length)];
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -19,9 +30,9 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                "OpenPelo - Free Your Peloton",
+                "OpenPelo - $_tagline",
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -41,6 +52,24 @@ class HomeScreen extends StatelessWidget {
                 } else {
                    showDialog(context: context, builder: (_) => const PelotonUninstallerDialog());
                 }
+              } else if (value == 'dev_options') {
+                if (provider.selectedDevice == null) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
+                } else {
+                   _showDeveloperOptionsDialog(context, provider);
+                }
+              } else if (value == 'default_launcher') {
+                if (provider.selectedDevice == null) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
+                } else {
+                   _showDefaultLauncherDialog(context, provider);
+                }
+              } else if (value == 'rotate_screen') {
+                if (provider.selectedDevice == null) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
+                } else {
+                   _showRotateScreenDialog(context, provider);
+                }
               } else if (value == 'check_updates') {
                 await provider.checkForUpdates();
               }
@@ -49,6 +78,18 @@ class HomeScreen extends StatelessWidget {
               const PopupMenuItem(
                 value: 'uninstall',
                 child: Text('Uninstall Peloton Apps'),
+              ),
+              const PopupMenuItem(
+                value: 'dev_options',
+                child: Text('Enable Developer Settings'),
+              ),
+              const PopupMenuItem(
+                value: 'default_launcher',
+                child: Text('Set Default Launcher'),
+              ),
+              const PopupMenuItem(
+                value: 'rotate_screen',
+                child: Text('Rotate Screen'),
               ),
               const PopupMenuItem(
                 value: 'check_updates',
@@ -290,7 +331,7 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
+}
   Future<bool> _showReinstallDialog(BuildContext context, String appName) async {
     return await showDialog<bool>(
       context: context,
@@ -315,4 +356,283 @@ class HomeScreen extends StatelessWidget {
       ),
     ) ?? false;
   }
-}
+
+  void _showRotateScreenDialog(BuildContext context, AppProvider provider) async {
+    const labels = ['0° (Natural)', '90° (Landscape)', '180° (Inverted)', '270° (Landscape Flipped)'];
+    const icons = [Icons.stay_current_portrait, Icons.stay_current_landscape, Icons.stay_current_portrait, Icons.stay_current_landscape];
+
+    int currentRotation = await provider.getRotation();
+    bool autoRotate = await provider.getAutoRotation();
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text("Rotate Screen"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icons[currentRotation],
+                size: 64,
+                color: autoRotate ? Colors.grey : Colors.blue,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                labels[currentRotation],
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.rotate_right),
+                label: const Text("Rotate"),
+                onPressed: autoRotate ? null : () async {
+                  final next = (currentRotation + 1) % 4;
+                  final success = await provider.setRotation(next);
+                  if (success) {
+                    setDialogState(() {
+                      currentRotation = next;
+                      autoRotate = false;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              SwitchListTile(
+                title: const Text("Auto-rotate"),
+                subtitle: const Text("Use accelerometer to rotate"),
+                value: autoRotate,
+                onChanged: (value) async {
+                  final success = await provider.setAutoRotation(value);
+                  if (success) {
+                    setDialogState(() {
+                      autoRotate = value;
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Done"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDefaultLauncherDialog(BuildContext context, AppProvider provider) async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text("Detecting installed launchers..."),
+          ],
+        ),
+      ),
+    );
+
+    final launchers = await provider.getInstalledLaunchers();
+
+    if (context.mounted) Navigator.pop(context); // Close loading
+    if (!context.mounted) return;
+
+    if (launchers.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("No Launchers Found"),
+          content: const Text(
+            "Could not detect any launcher apps on the device.\n\n"
+            "Install a launcher (like Nova or Kvaesitso) from the app list first."
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK")),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Set Default Launcher"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Select a launcher to open its settings on the device. "
+                "From there, enable the \"Home app\" or \"Set as default\" permission.",
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ...launchers.map((launcher) {
+                final pkg = launcher['package'] ?? '';
+                final label = launcher['label'] ?? pkg;
+
+                return ListTile(
+                  leading: const Icon(Icons.home_outlined),
+                  title: Text(label),
+                  subtitle: Text(
+                    pkg,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  trailing: ElevatedButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final success = await provider.openAppSettings(pkg);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success
+                                ? "Opened settings for $label on device. Set it as the default home app there."
+                                : "Failed to open settings for $label."),
+                            backgroundColor: success ? Colors.green : Colors.red,
+                            duration: const Duration(seconds: 5),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text("Set Default"),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeveloperOptionsDialog(BuildContext context, AppProvider provider) {
+    final serial = provider.selectedDevice!.serial;
+    final deviceName = provider.selectedDevice!.name ?? serial;
+
+    // Track checkbox state in the dialog
+    bool wirelessDebugging = true;
+    bool stayAwake = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text("Enable Developer Settings"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Select settings to enable on $deviceName:",
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: wirelessDebugging,
+                onChanged: (v) => setDialogState(() => wirelessDebugging = v ?? false),
+                title: const Text("Wireless Debugging"),
+                subtitle: const Text("Adds quick settings tile & enables wireless ADB"),
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
+              CheckboxListTile(
+                value: stayAwake,
+                onChanged: (v) => setDialogState(() => stayAwake = v ?? false),
+                title: const Text("Stay Awake While Charging"),
+                subtitle: const Text("Prevents screen from sleeping when plugged in"),
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: (!wirelessDebugging && !stayAwake)
+                  ? null
+                  : () async {
+                      Navigator.pop(ctx);
+                      
+                      // Show progress
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => const AlertDialog(
+                          content: Row(
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(width: 16),
+                              Text("Applying settings..."),
+                            ],
+                          ),
+                        ),
+                      );
+
+                      final results = await provider.enableDeveloperSettings(
+                        serial: serial,
+                        wirelessDebugging: wirelessDebugging,
+                        stayAwake: stayAwake,
+                      );
+
+                      if (context.mounted) Navigator.pop(context); // Close progress
+
+                      if (context.mounted) {
+                        final allOk = results.values.every((v) => v);
+                        showDialog(
+                          context: context,
+                          builder: (ctx2) => AlertDialog(
+                            icon: Icon(
+                              allOk ? Icons.check_circle : Icons.warning_amber,
+                              color: allOk ? Colors.green : Colors.orange,
+                              size: 48,
+                            ),
+                            title: Text(allOk ? "Settings Applied" : "Partial Success"),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: results.entries.map((e) => Row(
+                                children: [
+                                  Icon(e.value ? Icons.check : Icons.close,
+                                    color: e.value ? Colors.green : Colors.red, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(e.key)),
+                                ],
+                              )).toList(),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx2),
+                                child: const Text("OK"),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+              child: const Text("Apply"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
