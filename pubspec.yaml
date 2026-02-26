@@ -1,7 +1,7 @@
 name: openpelo
 description: "Your Machine, Your Apps"
 publish_to: 'none'
-version: 1.1.0
+version: 1.0.62
 
 environment:
     sdk: ">=3.5.0 <4.0.0"
