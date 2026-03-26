@@ -407,7 +407,7 @@ class AdbService {
   }
 
   /// Get installed launcher (home) apps on the device.
-  /// Returns a list of maps with 'package' and 'label' keys.
+  /// Returns a list of maps with 'package', 'component', and 'label' keys.
   Future<List<Map<String, String>>> getInstalledLaunchers(String serial) async {
     if (isMobile) return [];
     try {
@@ -418,16 +418,19 @@ class AdbService {
       ]);
       final output = result.stdout.toString().trim();
       final launchers = <Map<String, String>>[];
-      final seen = <String>{};
+      final seenComponents = <String>{};
 
       for (var line in output.split('\n')) {
         line = line.trim();
         if (line.isEmpty) continue;
-        final pkg = line.contains('/') ? line.split('/')[0] : line;
-        if (pkg.isNotEmpty && seen.add(pkg)) {
+        final component = _extractComponentFromLine(line);
+        if (component == null || !seenComponents.add(component)) continue;
+        final pkg = component.split('/')[0];
+        if (pkg.isNotEmpty) {
           final label = await _getAppLabel(serial, pkg);
           launchers.add({
             'package': pkg,
+            'component': component,
             'label': label ?? pkg,
           });
         }
@@ -444,11 +447,14 @@ class AdbService {
         for (var line in output2.split('\n')) {
           line = line.trim();
           if (line.isEmpty) continue;
-          final pkg = line.contains('/') ? line.split('/')[0] : line;
-          if (pkg.isNotEmpty && seen.add(pkg)) {
+          final component = _extractComponentFromLine(line);
+          if (component == null || !seenComponents.add(component)) continue;
+          final pkg = component.split('/')[0];
+          if (pkg.isNotEmpty) {
             final label = await _getAppLabel(serial, pkg);
             launchers.add({
               'package': pkg,
+              'component': component,
               'label': label ?? pkg,
             });
           }
@@ -459,6 +465,65 @@ class AdbService {
     } catch (e) {
       onLog("Failed to list launchers: $e", 'error');
       return [];
+    }
+  }
+
+  /// Set the default HOME activity to the given launcher component.
+  Future<bool> setDefaultLauncher(String serial, String component) async {
+    if (isMobile) return false;
+    try {
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'cmd',
+        'package',
+        'set-home-activity',
+        component,
+      ]);
+      if (result.exitCode == 0) {
+        onLog("Default launcher set to $component", 'info');
+        return true;
+      }
+      onLog("Failed to set default launcher: ${result.stderr}", 'error');
+      return false;
+    } catch (e) {
+      onLog("Failed to set default launcher: $e", 'error');
+      return false;
+    }
+  }
+
+  /// Get the currently resolved default HOME activity component.
+  /// Returns values like `com.example.launcher/.MainActivity`.
+  Future<String?> getDefaultLauncherComponent(String serial) async {
+    if (isMobile) return null;
+    try {
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'cmd',
+        'package',
+        'resolve-activity',
+        '--brief',
+        '-a',
+        'android.intent.action.MAIN',
+        '-c',
+        'android.intent.category.HOME',
+      ]);
+      if (result.exitCode != 0) return null;
+
+      final output = result.stdout.toString().trim();
+      for (var line in output.split('\n')) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+        final component = _extractComponentFromLine(line);
+        if (component != null) return component;
+      }
+      return null;
+    } catch (e) {
+      onLog("Failed to get current default launcher: $e", 'error');
+      return null;
     }
   }
 
@@ -493,6 +558,11 @@ class AdbService {
       }
     } catch (_) {}
     return null;
+  }
+
+  String? _extractComponentFromLine(String line) {
+    final match = RegExp(r'([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)').firstMatch(line);
+    return match?.group(1);
   }
 
   /// Get the WiFi IP address of a connected device via its shell.

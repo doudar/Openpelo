@@ -444,6 +444,7 @@ class HomeScreen extends StatelessWidget {
     );
 
     final launchers = await provider.getInstalledLaunchers();
+    final currentDefaultComponent = await provider.getDefaultLauncherComponent();
 
     if (context.mounted) Navigator.pop(context); // Close loading
     if (!context.mounted) return;
@@ -476,18 +477,36 @@ class HomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                "Select a launcher to open its settings on the device. "
-                "From there, enable the \"Home app\" or \"Set as default\" permission.",
+                "Select a launcher and OpenPelo will set it as the default HOME app using ADB.",
                 style: TextStyle(fontSize: 13),
               ),
+              if (currentDefaultComponent != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  "Current default: $currentDefaultComponent",
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
               const SizedBox(height: 12),
               ...launchers.map((launcher) {
                 final pkg = launcher['package'] ?? '';
                 final label = launcher['label'] ?? pkg;
+                final component = launcher['component'] ?? '';
+                final isCurrentDefault = currentDefaultComponent != null &&
+                    component == currentDefaultComponent;
 
                 return ListTile(
-                  leading: const Icon(Icons.home_outlined),
-                  title: Text(label),
+                  tileColor: isCurrentDefault ? Colors.green.withValues(alpha: 0.12) : null,
+                  leading: Icon(
+                    isCurrentDefault ? Icons.check_circle : Icons.home_outlined,
+                    color: isCurrentDefault ? Colors.green[700] : null,
+                  ),
+                  title: Text(
+                    isCurrentDefault ? "$label (Current Default)" : label,
+                    style: TextStyle(
+                      fontWeight: isCurrentDefault ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
                   subtitle: Text(
                     pkg,
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
@@ -495,15 +514,41 @@ class HomeScreen extends StatelessWidget {
                   trailing: ElevatedButton(
                     onPressed: () async {
                       Navigator.pop(ctx);
-                      final success = await provider.openAppSettings(pkg);
+                      if (component.isEmpty) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Could not determine launcher activity component."),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      final beforeComponent = await provider.getDefaultLauncherComponent();
+                      final success = await provider.setDefaultLauncher(component);
+                      final afterComponent = await provider.getDefaultLauncherComponent();
+                      final verified = success && afterComponent == component;
+
+                      String feedback;
+                      if (verified) {
+                        feedback =
+                            "Default launcher updated.\nBefore: ${beforeComponent ?? 'Unknown'}\nAfter: ${afterComponent ?? 'Unknown'}";
+                      } else if (success) {
+                        feedback =
+                            "Launcher command sent, but verification did not match.\nBefore: ${beforeComponent ?? 'Unknown'}\nAfter: ${afterComponent ?? 'Unknown'}\nExpected: $component";
+                      } else {
+                        feedback =
+                            "Failed to set $label as default launcher.\nBefore: ${beforeComponent ?? 'Unknown'}\nAfter: ${afterComponent ?? 'Unknown'}";
+                      }
+
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(success
-                                ? "Opened settings for $label on device. Set it as the default home app there."
-                                : "Failed to open settings for $label."),
-                            backgroundColor: success ? Colors.green : Colors.red,
-                            duration: const Duration(seconds: 5),
+                            content: Text(feedback),
+                            backgroundColor: verified ? Colors.green : Colors.red,
+                            duration: const Duration(seconds: 7),
                           ),
                         );
                       }

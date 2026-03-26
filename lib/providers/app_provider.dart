@@ -788,6 +788,31 @@ class AppProvider with ChangeNotifier {
     }
   }
 
+  /// Set the default HOME launcher activity on the selected device.
+  Future<bool> setDefaultLauncher(String component) async {
+    if (selectedDevice == null) return false;
+    _setBusy(true);
+    try {
+      return await _adbService.setDefaultLauncher(selectedDevice!.serial, component);
+    } catch (e) {
+      _onLog("Error setting default launcher: $e", 'error');
+      return false;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Get currently resolved default HOME launcher component.
+  Future<String?> getDefaultLauncherComponent() async {
+    if (selectedDevice == null) return null;
+    try {
+      return await _adbService.getDefaultLauncherComponent(selectedDevice!.serial);
+    } catch (e) {
+      _onLog("Error getting default launcher: $e", 'error');
+      return null;
+    }
+  }
+
   /// Set the device display rotation (0-3).
   Future<bool> setRotation(int rotation) async {
     if (selectedDevice == null) return false;
