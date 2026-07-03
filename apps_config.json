@@ -12,10 +12,10 @@
             "description": "Sends bike data via BLE and provides a data metrics overlay",
             "abi": "arm64-v8a"
         },
-        "Nova Launcher": {
-            "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
-            "package_name": "Nova Launcher.apk",
-            "description": "The premier custom launcher for Android",
+        "Lawnchair Launcher": {
+            "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/v15.0.0-beta2/Lawnchair.15.0.0.Beta.2.apk",
+            "package_name": "Lawnchair.15.0.0.Beta.2.apk",
+            "description": "Preferred open source launcher for OpenPelo.\nRotate screen in app settings behavior-> screen rotation",
             "abi": "arm64-v8a"
         },
         "Kvaesitso": {
@@ -24,10 +24,10 @@
             "description": "Open Source Launcher.",
             "abi": "arm64-v8a"
         },
-        "Lawnchair Launcher": {
-            "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/v15.0.0-beta2/Lawnchair.15.0.0.Beta.2.apk",
-            "package_name": "Lawnchair.15.0.0.Beta.2.apk",
-            "description": "Open Source launcher.\nRotate screen in app settings behavior-> screen rotation",
+        "Nova Launcher": {
+            "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
+            "package_name": "Nova Launcher.apk",
+            "description": "Custom launcher for Android. Lawnchair is now preferred for OpenPelo, but Nova still works.",
             "abi": "arm64-v8a"
         },
         "FireFox Focus": {
@@ -96,11 +96,17 @@
             "description": "Emby Client; must have access to you own Emby Server.  https://emby.media/about.html",
             "abi": "arm64-v8a"
         },
-        "SkyTube": {
-            "url": "https://api.github.com/repos/SkyTubeTeam/SkyTube/releases/latest",
-            "package_name": "skytube.apk",
-            "description": "An open source YouTube client for Android.",
+        "TizenTube Cobalt": {
+            "url": "https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest",
+            "package_name": "cobalt-arm64.apk",
+            "description": "Enhanced YouTube client with ad blocking, SponsorBlock, and DeArrow support. Replaces SkyTube.",
             "abi": "arm64-v8a"
+        },
+        "TizenTube Cobalt ARM": {
+            "url": "https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest",
+            "package_name": "cobalt-arm.apk",
+            "description": "32-bit ARM build of TizenTube Cobalt for armeabi-v7a devices. Replaces SkyTube; requires Android 8+.",
+            "abi": "armeabi-v7a"
         },
         "SkyTubeLegacy": {
             "url": "https://api.github.com/repos/SkyTubeTeam/SkyTubeLegacy/releases/latest",

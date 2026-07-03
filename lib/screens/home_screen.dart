@@ -45,6 +45,7 @@ class HomeScreen extends StatelessWidget {
         ),
         actions: [
           PopupMenuButton<String>(
+            tooltip: 'Open tools menu',
             onSelected: (value) async {
               if (value == 'uninstall') {
                 if (provider.selectedDevice == null) {
@@ -96,9 +97,38 @@ class HomeScreen extends StatelessWidget {
                 child: Text('Check For Updates'),
               ),
             ],
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Center(child: Text("Tools", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500))),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(horizontal: 12.0),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                border: Border.all(color: Theme.of(context).colorScheme.primary),
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.build,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    "Tools",
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ],
+              ),
             ),
           ),
           IconButton(
