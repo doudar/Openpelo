@@ -406,6 +406,100 @@ class AdbService {
     }
   }
 
+  Future<bool> _runShellStep(
+    String serial,
+    String label,
+    List<String> shellArgs, {
+    String? expectedOutput,
+  }) async {
+    try {
+      final result = await runAdbCommand(['-s', serial, 'shell', ...shellArgs]);
+      final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+      final ok = result.exitCode == 0 &&
+          (expectedOutput == null ||
+              output.contains(expectedOutput.toLowerCase()));
+      onLog("$label: ${ok ? 'OK' : 'Failed'}", ok ? 'info' : 'error');
+      return ok;
+    } catch (e) {
+      onLog("$label failed: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<Map<String, bool>> enableBuiltinNetflix(String serial) async {
+    if (isMobile) return {};
+
+    final results = <String, bool>{};
+    results['Find Netflix package'] = await _runShellStep(
+      serial,
+      'Checking for Netflix package',
+      ['pm', 'list', 'packages', 'com.netflix.mediaclient'],
+      expectedOutput: 'com.netflix.mediaclient',
+    );
+    results['Whitelist Netflix from Doze'] = await _runShellStep(
+      serial,
+      'Whitelisting Netflix from Doze',
+      ['dumpsys', 'deviceidle', 'whitelist', '+com.netflix.mediaclient'],
+    );
+    results['Allow Netflix background runs'] = await _runShellStep(
+      serial,
+      'Allowing Netflix background runs',
+      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'RUN_IN_BACKGROUND', 'allow'],
+    );
+    results['Allow Netflix foreground service'] = await _runShellStep(
+      serial,
+      'Allowing Netflix foreground service',
+      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'START_FOREGROUND', 'allow'],
+    );
+    results['Disable Peloton OEM cleanup plugin'] = await _runShellStep(
+      serial,
+      'Disabling Peloton OEM cleanup plugin',
+      ['pm', 'disable-user', '--user', '0', 'com.onepeloton.systempluginui'],
+    );
+    results['Verify OEM plugin disabled'] = await _runShellStep(
+      serial,
+      'Verifying OEM plugin is disabled',
+      ['pm', 'list', 'packages', '-d', 'com.onepeloton.systempluginui'],
+      expectedOutput: 'com.onepeloton.systempluginui',
+    );
+
+    return results;
+  }
+
+  Future<Map<String, bool>> disableBuiltinNetflix(String serial) async {
+    if (isMobile) return {};
+
+    final results = <String, bool>{};
+    results['Re-enable Peloton OEM cleanup plugin'] = await _runShellStep(
+      serial,
+      'Re-enabling Peloton OEM cleanup plugin',
+      ['pm', 'enable', '--user', '0', 'com.onepeloton.systempluginui'],
+    );
+    results['Remove Netflix Doze whitelist'] = await _runShellStep(
+      serial,
+      'Removing Netflix Doze whitelist',
+      ['dumpsys', 'deviceidle', 'whitelist', '-com.netflix.mediaclient'],
+    );
+    results['Restore Netflix background appop'] = await _runShellStep(
+      serial,
+      'Restoring Netflix background appop',
+      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'RUN_IN_BACKGROUND', 'default'],
+    );
+    results['Restore Netflix foreground service appop'] = await _runShellStep(
+      serial,
+      'Restoring Netflix foreground service appop',
+      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'START_FOREGROUND', 'default'],
+    );
+    results['Verify OEM plugin package'] = await _runShellStep(
+      serial,
+      'Verifying OEM plugin is enabled',
+      ['pm', 'list', 'packages', '-e', 'com.onepeloton.systempluginui'],
+      expectedOutput: 'com.onepeloton.systempluginui',
+    );
+
+    return results;
+  }
+
   /// Get installed launcher (home) apps on the device.
   /// Returns a list of maps with 'package', 'component', and 'label' keys.
   Future<List<Map<String, String>>> getInstalledLaunchers(String serial) async {

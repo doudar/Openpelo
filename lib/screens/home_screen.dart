@@ -71,6 +71,12 @@ class HomeScreen extends StatelessWidget {
                 } else {
                    _showRotateScreenDialog(context, provider);
                 }
+              } else if (value == 'builtin_netflix') {
+                if (provider.selectedDevice == null) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
+                } else {
+                   _showBuiltinNetflixDialog(context, provider);
+                }
               } else if (value == 'check_updates') {
                 await provider.checkForUpdates();
               }
@@ -91,6 +97,10 @@ class HomeScreen extends StatelessWidget {
               const PopupMenuItem(
                 value: 'rotate_screen',
                 child: Text('Rotate Screen'),
+              ),
+              const PopupMenuItem(
+                value: 'builtin_netflix',
+                child: Text('Enable/Disable Built-in Netflix'),
               ),
               const PopupMenuItem(
                 value: 'check_updates',
@@ -453,6 +463,122 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showBuiltinNetflixDialog(BuildContext context, AppProvider provider) {
+    final serial = provider.selectedDevice!.serial;
+    final deviceName = provider.selectedDevice!.name ?? serial;
+
+    Future<void> runNetflixTool(bool enabled) async {
+      Navigator.pop(context);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  enabled
+                      ? "Enabling built-in Netflix..."
+                      : "Restoring Netflix defaults...",
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final results = await provider.setBuiltinNetflixEnabled(enabled);
+
+      if (context.mounted) Navigator.pop(context);
+      if (!context.mounted) return;
+
+      final allOk = results.isNotEmpty && results.values.every((v) => v);
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(
+            allOk ? Icons.check_circle : Icons.warning_amber,
+            color: allOk ? Colors.green : Colors.orange,
+            size: 48,
+          ),
+          title: Text(allOk ? "Netflix Updated" : "Netflix Update Incomplete"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: results.isEmpty
+                  ? [
+                      const Text(
+                        "No commands were run. Make sure a supported device is connected.",
+                      ),
+                    ]
+                  : results.entries.map((entry) => Row(
+                        children: [
+                          Icon(
+                            entry.value ? Icons.check : Icons.close,
+                            color: entry.value ? Colors.green : Colors.red,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(entry.key)),
+                        ],
+                      )).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Built-in Netflix"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Target device: $deviceName"),
+            const SizedBox(height: 12),
+            const Text(
+              "Enable applies the Netflix Doze/appops exceptions and disables "
+              "com.onepeloton.systempluginui so the built-in Netflix launcher "
+              "is not killed by the OEM subscription check.",
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "Caution: disabling com.onepeloton.systempluginui can break "
+              "OEM/system features. Restore defaults if anything misbehaves.",
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => runNetflixTool(false),
+            child: const Text("Restore Defaults"),
+          ),
+          ElevatedButton(
+            onPressed: () => runNetflixTool(true),
+            child: const Text("Enable Netflix"),
+          ),
+        ],
       ),
     );
   }

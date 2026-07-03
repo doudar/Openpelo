@@ -855,6 +855,27 @@ class AppProvider with ChangeNotifier {
     }
   }
 
+  Future<Map<String, bool>> setBuiltinNetflixEnabled(bool enabled) async {
+    if (selectedDevice == null) return {};
+    _setBusy(true);
+    try {
+      _onLog(
+        enabled
+            ? "Applying built-in Netflix support..."
+            : "Restoring built-in Netflix defaults...",
+        'info',
+      );
+      return enabled
+          ? await _adbService.enableBuiltinNetflix(selectedDevice!.serial)
+          : await _adbService.disableBuiltinNetflix(selectedDevice!.serial);
+    } catch (e) {
+      _onLog("Error updating built-in Netflix support: $e", 'error');
+      return {};
+    } finally {
+      _setBusy(false);
+    }
+  }
+
   Future<List<Map<String, String>>> scanForWirelessDevices({int? port}) async {
     _setBusy(true);
     List<Map<String, String>> devices = [];
