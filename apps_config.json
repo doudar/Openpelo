@@ -96,16 +96,22 @@
             "description": "Emby Client; must have access to you own Emby Server.  https://emby.media/about.html",
             "abi": "arm64-v8a"
         },
-        "TizenTube Cobalt": {
-            "url": "https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest",
-            "package_name": "cobalt-arm64.apk",
-            "description": "Enhanced YouTube client with ad blocking, SponsorBlock, and DeArrow support. Replaces SkyTube.",
+        "LibreTube": {
+            "url": "https://api.github.com/repos/libre-tube/LibreTube/releases/latest",
+            "package_name": "app-release.apk",
+            "description": "Privacy-focused YouTube client for Android. \nFor landscape: open LibreTube, go to Settings -> General -> Screen Orientation -> Landscape.",
             "abi": "arm64-v8a"
         },
-        "TizenTube Cobalt ARM": {
-            "url": "https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest",
-            "package_name": "cobalt-arm.apk",
-            "description": "32-bit ARM build of TizenTube Cobalt for armeabi-v7a devices. Replaces SkyTube; requires Android 8+.",
+        "NewPipe": {
+            "url": "https://api.github.com/repos/TeamNewPipe/NewPipe/releases/latest",
+            "package_name": "NewPipe_v0.28.8.apk",
+            "description": "Lightweight YouTube/media client for Android - Privacy focused",
+            "abi": "arm64-v8a"
+        },
+        "LibreTube ARM": {
+            "url": "https://api.github.com/repos/libre-tube/LibreTube/releases/latest",
+            "package_name": "app-release.apk",
+            "description": "Privacy-focused YouTube client for armeabi-v7a devices. \nFor landscape: open LibreTube, go to Settings -> General -> Screen Orientation -> Landscape.",
             "abi": "armeabi-v7a"
         },
         "SkyTubeLegacy": {

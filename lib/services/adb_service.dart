@@ -11,6 +11,7 @@ import 'package:flutter_adb/flutter_adb.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/device_model.dart';
+import '../models/installed_app_model.dart';
 
 class AdbService {
   String? _adbPath;
@@ -402,6 +403,258 @@ class AdbService {
       return true;
     } catch (e) {
       onLog("Failed to set auto-rotation: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<List<InstalledAppModel>> listInstalledApps(
+    String serial, {
+    bool includeSystemApps = false,
+  }) async {
+    try {
+      final apps = await _listInstalledAppSummaries(
+        serial,
+        includeSystemApps: includeSystemApps,
+      );
+      apps.sort((a, b) {
+        final labelCompare = a.label
+            .toLowerCase()
+            .compareTo(b.label.toLowerCase());
+        if (labelCompare != 0) return labelCompare;
+        return a.packageName.compareTo(b.packageName);
+      });
+      return apps;
+    } catch (e) {
+      onLog("Failed to list installed apps: $e", 'error');
+      return [];
+    }
+  }
+
+  Future<List<InstalledAppModel>> _listInstalledAppSummaries(
+    String serial, {
+    required bool includeSystemApps,
+  }) async {
+    final command = includeSystemApps
+        ? 'pm list packages -f'
+        : 'pm list packages -f -3';
+    final output = await _runPackageListCommand(
+      serial,
+      command,
+      includeSystemApps: includeSystemApps,
+    );
+    return _parseInstalledAppList(output, includeSystemApps: includeSystemApps);
+  }
+
+  Future<String> _runPackageListCommand(
+    String serial,
+    String mobileCommand, {
+    required bool includeSystemApps,
+  }) async {
+    if (isMobile) {
+      if (_connectedIp == null) return '';
+      return await Adb.sendSingleCommand(
+        mobileCommand,
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+    }
+
+    if (_adbPath == null) await init();
+    if (_adbPath == null) throw Exception("ADB not found");
+
+    final shellArgs = includeSystemApps
+        ? ['pm', 'list', 'packages', '-f']
+        : ['pm', 'list', 'packages', '-f', '-3'];
+    final result = await Process.run(
+      _adbPath!,
+      ['-s', serial, 'shell', ...shellArgs],
+    );
+    return '${result.stdout}${result.stderr}';
+  }
+
+  List<InstalledAppModel> _parseInstalledAppList(
+    String output, {
+    required bool includeSystemApps,
+  }) {
+    final apps = <InstalledAppModel>[];
+    final seenPackages = <String>{};
+
+    for (var line in output.split('\n')) {
+      line = line.trim();
+      if (line.isEmpty) continue;
+
+      final pathMatch = RegExp(r'^package:(.+)=([^\s]+)$').firstMatch(line);
+      final plainMatch = RegExp(r'^package:([^\s]+)$').firstMatch(line);
+      final packageName = pathMatch?.group(2) ?? plainMatch?.group(1);
+      if (packageName == null || !seenPackages.add(packageName)) continue;
+
+      final sourcePath = pathMatch?.group(1) ?? '';
+      final isSystemApp = includeSystemApps && !_isUserAppPath(sourcePath);
+      apps.add(InstalledAppModel(
+        packageName: packageName,
+        label: _labelFromPackageName(packageName),
+        isSystemApp: isSystemApp,
+      ));
+    }
+
+    return apps;
+  }
+
+  bool _isUserAppPath(String sourcePath) {
+    final lower = sourcePath.toLowerCase();
+    return lower.startsWith('/data/app/') ||
+        lower.startsWith('/data/app-private/') ||
+        lower.startsWith('/mnt/expand/');
+  }
+
+  String _labelFromPackageName(String packageName) {
+    final parts = packageName.split('.');
+    var raw = parts.isNotEmpty ? parts.last : packageName;
+    if (raw.isEmpty && parts.length > 1) {
+      raw = parts[parts.length - 2];
+    }
+
+    final words = raw
+        .split(RegExp(r'[_\s-]+'))
+        .where((word) => word.isNotEmpty)
+        .map((word) {
+      if (word.length == 1) return word.toUpperCase();
+      return '${word[0].toUpperCase()}${word.substring(1)}';
+    }).toList();
+
+    if (words.isEmpty) {
+      return packageName;
+    }
+    return words.join(' ');
+  }
+
+  List<String> _parsePackageList(String output) {
+    final packages = <String>[];
+    for (var line in output.split('\n')) {
+      line = line.trim();
+      final match = RegExp(r'package:([^\s]+)').firstMatch(line);
+      if (match != null) {
+        packages.add(match.group(1)!);
+      }
+    }
+    packages.sort();
+    return packages;
+  }
+
+  Future<String> _runShellCommandText(String serial, String command) async {
+    if (isMobile) {
+      if (_connectedIp == null) return '';
+      return await Adb.sendSingleCommand(
+        command,
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+    }
+
+    final result = await runAdbCommand(['-s', serial, 'shell', command]);
+    return '${result.stdout}${result.stderr}';
+  }
+
+  Future<String> _runShellCommandQuiet(String serial, String command) async {
+    if (isMobile) {
+      if (_connectedIp == null) return '';
+      return await Adb.sendSingleCommand(
+        command,
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+    }
+
+    if (_adbPath == null) await init();
+    if (_adbPath == null) throw Exception("ADB not found");
+
+    final result = await Process.run(_adbPath!, ['-s', serial, 'shell', command]);
+    return '${result.stdout}${result.stderr}';
+  }
+
+  Future<bool> launchPackage(String serial, String packageName) async {
+    try {
+      final output = await _runShellCommandText(
+        serial,
+        'monkey -p $packageName -c android.intent.category.LAUNCHER 1',
+      );
+      final ok = !output.toLowerCase().contains('no activities found') &&
+          !output.toLowerCase().contains('error');
+      onLog(
+        ok ? "Launched $packageName" : "Could not launch $packageName",
+        ok ? 'info' : 'error',
+      );
+      return ok;
+    } catch (e) {
+      onLog("Failed to launch $packageName: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> forceStopPackage(String serial, String packageName) async {
+    try {
+      await _runShellCommandText(serial, 'am force-stop $packageName');
+      onLog("Force stopped $packageName", 'info');
+      return true;
+    } catch (e) {
+      onLog("Failed to force stop $packageName: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> clearPackageData(String serial, String packageName) async {
+    try {
+      final output = await _runShellCommandText(serial, 'pm clear $packageName');
+      final ok = output.toLowerCase().contains('success') || output.trim().isEmpty;
+      onLog(
+        ok
+            ? "Cleared data for $packageName"
+            : "Could not clear data for $packageName: $output",
+        ok ? 'info' : 'error',
+      );
+      return ok;
+    } catch (e) {
+      onLog("Failed to clear data for $packageName: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> tapScreen(String serial, int x, int y) async {
+    try {
+      await _runShellCommandQuiet(serial, 'input tap $x $y');
+      return true;
+    } catch (e) {
+      onLog("Failed to tap screen: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> swipeScreen(
+    String serial,
+    int startX,
+    int startY,
+    int endX,
+    int endY, {
+    int durationMs = 350,
+  }) async {
+    try {
+      await _runShellCommandQuiet(
+        serial,
+        'input swipe $startX $startY $endX $endY $durationMs',
+      );
+      return true;
+    } catch (e) {
+      onLog("Failed to swipe screen: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> pressKey(String serial, int keyCode) async {
+    try {
+      await _runShellCommandQuiet(serial, 'input keyevent $keyCode');
+      return true;
+    } catch (e) {
+      onLog("Failed to send keyevent $keyCode: $e", 'error');
       return false;
     }
   }

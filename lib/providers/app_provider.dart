@@ -13,6 +13,7 @@ import '../services/adb_service.dart';
 import '../services/config_service.dart';
 import '../models/app_model.dart';
 import '../models/device_model.dart';
+import '../models/installed_app_model.dart';
 import 'package:intl/intl.dart';
 
 class LogEntry {
@@ -657,6 +658,44 @@ class AppProvider with ChangeNotifier {
     return await _adbService.getScreenShotBytes(selectedDevice!.serial);
   }
 
+  Future<bool> tapScreen(int x, int y) async {
+    if (selectedDevice == null) return false;
+    return await _adbService.tapScreen(selectedDevice!.serial, x, y);
+  }
+
+  Future<bool> swipeScreen(
+    int startX,
+    int startY,
+    int endX,
+    int endY, {
+    int durationMs = 350,
+  }) async {
+    if (selectedDevice == null) return false;
+    return await _adbService.swipeScreen(
+      selectedDevice!.serial,
+      startX,
+      startY,
+      endX,
+      endY,
+      durationMs: durationMs,
+    );
+  }
+
+  Future<bool> pressBack() async {
+    if (selectedDevice == null) return false;
+    return await _adbService.pressKey(selectedDevice!.serial, 4);
+  }
+
+  Future<bool> pressHome() async {
+    if (selectedDevice == null) return false;
+    return await _adbService.pressKey(selectedDevice!.serial, 3);
+  }
+
+  Future<bool> pressRecents() async {
+    if (selectedDevice == null) return false;
+    return await _adbService.pressKey(selectedDevice!.serial, 187);
+  }
+
   Future<void> chooseSaveLocation() async {
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
     if (selectedDirectory != null) {
@@ -853,6 +892,91 @@ class AppProvider with ChangeNotifier {
       _onLog("Error setting auto-rotation: $e", 'error');
       return false;
     }
+  }
+
+  Future<List<InstalledAppModel>> listInstalledApps({
+    bool includeSystemApps = false,
+  }) async {
+    if (selectedDevice == null) return [];
+    _setBusy(true);
+    try {
+      _onLog(
+        includeSystemApps
+            ? "Scanning all installed apps..."
+            : "Scanning user-installed apps...",
+        'info',
+      );
+      return await _adbService.listInstalledApps(
+        selectedDevice!.serial,
+        includeSystemApps: includeSystemApps,
+      );
+    } catch (e) {
+      _onLog("Error listing installed apps: $e", 'error');
+      return [];
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<bool> launchInstalledApp(String packageName) async {
+    if (selectedDevice == null) return false;
+    return await _adbService.launchPackage(selectedDevice!.serial, packageName);
+  }
+
+  Future<bool> forceStopInstalledApp(String packageName) async {
+    if (selectedDevice == null) return false;
+    return await _adbService.forceStopPackage(
+      selectedDevice!.serial,
+      packageName,
+    );
+  }
+
+  Future<bool> clearInstalledAppData(String packageName) async {
+    if (selectedDevice == null) return false;
+    _setBusy(true);
+    try {
+      return await _adbService.clearPackageData(
+        selectedDevice!.serial,
+        packageName,
+      );
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<bool> uninstallInstalledApp(String packageName) async {
+    if (selectedDevice == null) return false;
+    _setBusy(true);
+    try {
+      final output = await _adbService.uninstallPackage(
+        selectedDevice!.serial,
+        packageName,
+      );
+      final ok = output.contains('Success');
+      _onLog(
+        ok
+            ? "Uninstalled $packageName"
+            : "Failed to uninstall $packageName: $output",
+        ok ? 'info' : 'error',
+      );
+      return ok;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<String?> exportInstalledApps(List<InstalledAppModel> apps) async {
+    if (apps.isEmpty) return null;
+    final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final path = p.join(saveLocation, 'installed_apps_$date.txt');
+    final file = File(path);
+    final lines = apps.map((app) {
+      final type = app.isSystemApp ? 'system' : 'user';
+      return '${app.label}\t${app.packageName}\t$type';
+    }).join('\n');
+    await file.writeAsString('Label\tPackage\tType\n$lines\n');
+    _onLog("Installed app list exported to $path", 'info');
+    return path;
   }
 
   Future<Map<String, bool>> setBuiltinNetflixEnabled(bool enabled) async {

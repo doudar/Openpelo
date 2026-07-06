@@ -5,6 +5,7 @@ import '../providers/app_provider.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/app_list_widget.dart';
 import '../widgets/guide_dialog.dart';
+import '../widgets/installed_app_manager_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
 import '../widgets/screen_mirror_dialog.dart';
 import 'wireless_connect_screen.dart';
@@ -53,6 +54,15 @@ class HomeScreen extends StatelessWidget {
                 } else {
                    showDialog(context: context, builder: (_) => const PelotonUninstallerDialog());
                 }
+              } else if (value == 'installed_apps') {
+                if (provider.selectedDevice == null) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
+                } else {
+                   showDialog(
+                     context: context,
+                     builder: (_) => const InstalledAppManagerDialog(),
+                   );
+                }
               } else if (value == 'dev_options') {
                 if (provider.selectedDevice == null) {
                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No device selected")));
@@ -82,6 +92,10 @@ class HomeScreen extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'installed_apps',
+                child: Text('Installed App Manager'),
+              ),
               const PopupMenuItem(
                 value: 'uninstall',
                 child: Text('Uninstall Peloton Apps'),
