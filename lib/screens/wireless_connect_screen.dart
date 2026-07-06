@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/device_model.dart';
 import '../providers/app_provider.dart';
+import '../theme/app_theme.dart';
 
 class WirelessConnectScreen extends StatefulWidget {
   const WirelessConnectScreen({super.key});
@@ -42,6 +43,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
   }
   
   void _showDeviceSelectionDialog(List<Map<String, String>> devices) {
+    final colorScheme = Theme.of(context).colorScheme;
     // Group devices by IP so we can merge pairing + connect ports
     final Map<String, Map<String, String>> grouped = {};
     for (final d in devices) {
@@ -92,11 +94,11 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                 children: [
                   Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(ip, style: TextStyle(color: Colors.grey[700])),
+                  Text(ip, style: TextStyle(color: colorScheme.onSurfaceVariant)),
                   if (pairPort != null)
-                    Text('Pair port: $pairPort', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    Text('Pair port: $pairPort', style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
                   if (connectPort != null)
-                    Text('Connect port: $connectPort', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    Text('Connect port: $connectPort', style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
                 ],
               ),
             ),
@@ -205,7 +207,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+          icon: const Icon(Icons.check_circle, color: AppColors.success, size: 48),
           title: const Text("Wireless ADB Enabled"),
           content: Text(
             "Successfully connected wirelessly to $ip:5555.\n\n"
@@ -220,10 +222,11 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
         ),
       );
     } else {
+      final colorScheme = Theme.of(context).colorScheme;
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.error_outline, color: Colors.red, size: 48),
+          icon: Icon(Icons.error_outline, color: colorScheme.error, size: 48),
           title: const Text("Setup Failed"),
           content: const Text(
             "Could not determine the device's WiFi IP address.\n\n"
@@ -262,6 +265,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
   }
 
   Widget _buildGuideView() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         Expanded(
@@ -279,7 +283,11 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                    return Padding(
                      padding: const EdgeInsets.only(bottom: 16.0),
                      child: ListTile(
-                        leading: CircleAvatar(child: Text("${index + 1}")),
+                        leading: CircleAvatar(
+                          backgroundColor: colorScheme.primaryContainer,
+                          foregroundColor: colorScheme.onPrimaryContainer,
+                          child: Text("${index + 1}"),
+                        ),
                         title: Text(step['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(step['description'] ?? ''),
                      ),
@@ -297,8 +305,8 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
               onPressed: () => setState(() => _showForm = true),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.all(16),
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary
               ),
               child: const Text("I'm Ready - Connect Device", style: TextStyle(fontSize: 16)),
             ),
@@ -309,6 +317,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
   }
 
   Widget _buildConnectionForm() {
+    final colorScheme = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
       child: Column(
@@ -327,7 +336,10 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                     onPressed: provider.isBusy ? null : _startScan,
                     icon: const Icon(Icons.search),
                     label: const Text("Scan for Devices"),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[50]),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colorScheme.secondaryContainer,
+                      foregroundColor: colorScheme.onSecondaryContainer,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -336,7 +348,10 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                     onPressed: provider.isBusy ? null : _showPairViaUsbDialog,
                     icon: const Icon(Icons.usb),
                     label: const Text("Pair using USB"),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[50]),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colorScheme.tertiaryContainer,
+                      foregroundColor: colorScheme.onTertiaryContainer,
+                    ),
                   ),
                 ),
               ],
@@ -390,8 +405,8 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                 label: const Text("Connect"),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.all(16),
-                  backgroundColor: Colors.lightGreen[100],
-                  foregroundColor: Colors.black
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white
                 ),
               );
             },
@@ -424,12 +439,12 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                     Text(
                       provider.statusMessage,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.black),
+                      style: TextStyle(color: colorScheme.onSurface),
                     ),
                   if (hasConnected) ...[
                     Text(
                       '$uniqueCount device${uniqueCount != 1 ? 's' : ''} connected:',
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),
                     ...grouped.entries.map((entry) => Padding(
@@ -437,12 +452,12 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                          const Icon(Icons.check_circle, color: AppColors.success, size: 18),
                           const SizedBox(width: 6),
                           Flexible(
                             child: Text(
                               '${entry.key} • ${entry.value.join(', ')}',
-                              style: const TextStyle(color: Colors.green),
+                              style: const TextStyle(color: AppColors.success),
                             ),
                           ),
                         ],
@@ -475,7 +490,7 @@ class _WirelessConnectScreenState extends State<WirelessConnectScreen> {
                               icon: const Icon(Icons.check),
                               label: const Text("Done"),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: AppColors.success,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.all(14),
                               ),

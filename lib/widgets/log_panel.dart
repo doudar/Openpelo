@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
+import '../theme/app_theme.dart';
+import 'recessed_pane.dart';
 
 class LogPanel extends StatefulWidget {
   const LogPanel({super.key});
@@ -26,27 +28,24 @@ class _LogPanelState extends State<LogPanel> {
     }
   }
 
-  Color _colorForTag(String tag) {
+  Color _colorForTag(String tag, ColorScheme colorScheme) {
     switch (tag) {
       case 'error':
       case 'stderr':
-        return Colors.red;
+        return colorScheme.error;
       case 'command':
-        return Colors.blue;
+        return colorScheme.primary;
       case 'status':
-        return Colors.teal;
+        return colorScheme.secondary;
       default:
-        return Colors.black;
+        return colorScheme.onSurface;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade400),
-        borderRadius: BorderRadius.circular(4),
-      ),
+    final colorScheme = Theme.of(context).colorScheme;
+    return RecessedPane(
       child: Stack(
         children: [
           Consumer<AppProvider>(
@@ -68,12 +67,15 @@ class _LogPanelState extends State<LogPanel> {
                   itemCount: logs.length,
                   itemBuilder: (context, index) {
                     final entry = logs[index];
-                    final color = _colorForTag(entry.tag);
+                    final color = _colorForTag(entry.tag, colorScheme);
 
                     return Text.rich(
                       TextSpan(
                         children: [
-                          TextSpan(text: "${entry.timestamp} ", style: const TextStyle(color: Colors.grey)),
+                          TextSpan(
+                            text: "${entry.timestamp} ",
+                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                          ),
                           TextSpan(text: entry.message, style: TextStyle(color: color)),
                         ],
                       ),
@@ -88,12 +90,12 @@ class _LogPanelState extends State<LogPanel> {
             right: 18,
             bottom: 8,
             child: Material(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: colorScheme.surfaceContainerLowest.withValues(alpha: 0.86),
               shape: const CircleBorder(),
               child: IconButton(
                 icon: Icon(
                   _autoScroll ? Icons.vertical_align_bottom : Icons.pause_circle_outline,
-                  color: _autoScroll ? Colors.blue : Colors.grey,
+                  color: _autoScroll ? AppColors.primary : colorScheme.onSurfaceVariant,
                 ),
                 tooltip: _autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF",
                 onPressed: () {

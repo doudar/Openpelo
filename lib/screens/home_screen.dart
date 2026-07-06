@@ -7,7 +7,9 @@ import '../widgets/app_list_widget.dart';
 import '../widgets/guide_dialog.dart';
 import '../widgets/installed_app_manager_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
+import '../widgets/recessed_pane.dart';
 import '../widgets/screen_mirror_dialog.dart';
+import '../theme/app_theme.dart';
 import 'wireless_connect_screen.dart';
 
 const _taglines = [
@@ -26,6 +28,11 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppProvider>(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusIsError = provider.statusMessage.contains('❌');
+    final statusText = provider.statusMessage
+        .replaceFirst('✅ ', '')
+        .replaceFirst('❌ ', '');
 
     return Scaffold(
       appBar: AppBar(
@@ -40,7 +47,9 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Text(
               'Version: ${provider.currentAppVersion ?? '...'}',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onPrimary.withValues(alpha: 0.86),
+                  ),
             ),
           ],
         ),
@@ -125,8 +134,10 @@ class HomeScreen extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
               padding: const EdgeInsets.symmetric(horizontal: 12.0),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                border: Border.all(color: Theme.of(context).colorScheme.primary),
+                color: colorScheme.onPrimary.withValues(alpha: 0.14),
+                border: Border.all(
+                  color: colorScheme.onPrimary.withValues(alpha: 0.36),
+                ),
                 borderRadius: BorderRadius.circular(8.0),
               ),
               child: Row(
@@ -135,13 +146,13 @@ class HomeScreen extends StatelessWidget {
                   Icon(
                     Icons.build,
                     size: 18,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    color: colorScheme.onPrimary,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     "Tools",
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      color: colorScheme.onPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
@@ -149,7 +160,7 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(width: 2),
                   Icon(
                     Icons.arrow_drop_down,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    color: colorScheme.onPrimary,
                   ),
                 ],
               ),
@@ -178,9 +189,12 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   if (provider.isUpdateAvailable)
                     Card(
-                      color: Colors.amber[50],
+                      color: colorScheme.tertiaryContainer,
                       child: ListTile(
-                        leading: const Icon(Icons.system_update),
+                        leading: Icon(
+                          Icons.system_update,
+                          color: colorScheme.onTertiaryContainer,
+                        ),
                         title: Text(
                           'Update available: ${provider.latestAppVersion}',
                           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -196,9 +210,12 @@ class HomeScreen extends StatelessWidget {
                     ),
                   if (provider.updateCheckError != null)
                     Card(
-                      color: Colors.red[50],
+                      color: colorScheme.errorContainer,
                       child: ListTile(
-                        leading: const Icon(Icons.warning_amber_rounded),
+                        leading: Icon(
+                          Icons.warning_amber_rounded,
+                          color: colorScheme.onErrorContainer,
+                        ),
                         title: const Text('Could not check for updates'),
                         subtitle: Text(provider.updateCheckError!),
                         trailing: TextButton(
@@ -215,35 +232,54 @@ class HomeScreen extends StatelessWidget {
                       provider.updateCheckError != null ||
                       provider.isCheckingForUpdate)
                     const SizedBox(height: 10),
-                  // Status & Device Selection
-                   Row(
+                  Row(
                     children: [
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: _StatusBanner(
+                          message: statusText,
+                          isError: statusIsError,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: Text(provider.statusMessage, 
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: provider.statusMessage.contains('❌') ? Colors.red : Colors.green[800],
-                            overflow: TextOverflow.ellipsis
-                          )),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          final steps = await provider.loadGuide('usb_debug_steps.json');
-                          if (context.mounted) {
-                              showDialog(context: context, builder: (_) => GuideDialog(title: "Developer Mode Guide", steps: steps));
-                          }
-                        },
-                        style: TextButton.styleFrom(backgroundColor: Colors.lightBlue[50]),
-                        child: const Text("Developer Mode Guide"),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const WirelessConnectScreen())
-                          );
-                        },
-                        style: TextButton.styleFrom(backgroundColor: Colors.amber[50]),
-                        child: const Text("📶 Connect via WiFi"),
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            TextButton(
+                              onPressed: () async {
+                                final steps = await provider.loadGuide('usb_debug_steps.json');
+                                if (context.mounted) {
+                                    showDialog(context: context, builder: (_) => GuideDialog(title: "Developer Mode Guide", steps: steps));
+                                }
+                              },
+                              style: TextButton.styleFrom(
+                                backgroundColor: colorScheme.secondaryContainer,
+                                foregroundColor: colorScheme.onSecondaryContainer,
+                                minimumSize: const Size(0, 42),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                              ),
+                              child: const Text("Developer Mode Guide"),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => const WirelessConnectScreen())
+                                );
+                              },
+                              style: TextButton.styleFrom(
+                                backgroundColor: colorScheme.tertiaryContainer,
+                                foregroundColor: colorScheme.onTertiaryContainer,
+                                minimumSize: const Size(0, 42),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                              ),
+                              child: const Text("📶 Connect via WiFi"),
+                            ),
+                          ],
+                        ),
                       ),
                       if (provider.isBusy)
                         const Padding(
@@ -277,9 +313,11 @@ class HomeScreen extends StatelessWidget {
                   
                   const SizedBox(height: 10),
                   
-                  // ADB Log
-                  const Text("ADB Messages", style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 5),
+                  const _SectionHeader(
+                    icon: Icons.terminal,
+                    label: "ADB Messages",
+                  ),
+                  const SizedBox(height: 6),
                   const SizedBox(
                     height: 150,
                     child: LogPanel(),
@@ -287,16 +325,16 @@ class HomeScreen extends StatelessWidget {
                   
                   const SizedBox(height: 10),
                   
-                  // Apps
-                  const Text("Available Apps", style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 5),
+                  const _SectionHeader(
+                    icon: Icons.apps,
+                    label: "Available Apps",
+                  ),
+                  const SizedBox(height: 6),
                   
                   // Use a fixed height container for the list so the page scrolls if needed
                   const SizedBox(
                     height: 300, 
-                    child: Card(
-                      child: AppListWidget(),
-                    ),
+                    child: RecessedPane(child: AppListWidget()),
                   ),
                   
                   const SizedBox(height: 10),
@@ -313,7 +351,10 @@ class HomeScreen extends StatelessWidget {
                           : null,
                         icon: const Icon(Icons.download),
                         label: const Text("Install Selected Apps"),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.lightGreen[100], foregroundColor: Colors.black),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                        ),
                       ),
                       ElevatedButton.icon(
                         onPressed: (!provider.isBusy && provider.selectedDevice != null)
@@ -321,23 +362,32 @@ class HomeScreen extends StatelessWidget {
                           : null,
                         icon: const Icon(Icons.folder_open),
                         label: const Text("Install Local APK"),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.lightBlue[100], foregroundColor: Colors.black),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.secondary,
+                          foregroundColor: colorScheme.onSecondary,
+                        ),
                       ),
                     ],
                   ),
                   
                   const Divider(height: 30),
                   
-                  // Media Settings
-                  Text("Media Settings", style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 5),
+                  const _SectionHeader(
+                    icon: Icons.perm_media_outlined,
+                    label: "Media Settings",
+                  ),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       const Text("Save Location: "),
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(4)),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerLowest,
+                            border: Border.all(color: colorScheme.outline),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                           child: Text(provider.saveLocation, overflow: TextOverflow.ellipsis),
                         ),
                       ),
@@ -372,7 +422,10 @@ class HomeScreen extends StatelessWidget {
                             icon: Icon(provider.isRecording ? Icons.stop : Icons.videocam),
                           label: Text(provider.isRecording ? "Stop Rec" : "Record"),
                           style: provider.isRecording 
-                            ? OutlinedButton.styleFrom(backgroundColor: Colors.red[50], foregroundColor: Colors.red)
+                            ? OutlinedButton.styleFrom(
+                                backgroundColor: colorScheme.errorContainer,
+                                foregroundColor: colorScheme.onErrorContainer,
+                              )
                             : null,
                         ),
                       ],
@@ -386,7 +439,86 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
+class _StatusBanner extends StatelessWidget {
+  final String message;
+  final bool isError;
+
+  const _StatusBanner({
+    required this.message,
+    required this.isError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground = isError ? colorScheme.error : AppColors.success;
+    final background = isError
+        ? colorScheme.errorContainer
+        : AppColors.success.withValues(alpha: 0.10);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: foreground.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isError ? Icons.error_outline : Icons.check_circle,
+            color: foreground,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: colorScheme.primary),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      ],
+    );
+  }
+}
+
   Future<bool> _showReinstallDialog(BuildContext context, String appName) async {
+    final colorScheme = Theme.of(context).colorScheme;
     return await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -403,7 +535,7 @@ class HomeScreen extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: colorScheme.error),
             child: const Text('Uninstall & Reinstall'),
           ),
         ],
@@ -419,6 +551,7 @@ class HomeScreen extends StatelessWidget {
     bool autoRotate = await provider.getAutoRotation();
 
     if (!context.mounted) return;
+    final colorScheme = Theme.of(context).colorScheme;
 
     showDialog(
       context: context,
@@ -431,7 +564,7 @@ class HomeScreen extends StatelessWidget {
               Icon(
                 icons[currentRotation],
                 size: 64,
-                color: autoRotate ? Colors.grey : Colors.blue,
+                color: autoRotate ? colorScheme.outline : colorScheme.primary,
               ),
               const SizedBox(height: 12),
               Text(
@@ -482,6 +615,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _showBuiltinNetflixDialog(BuildContext context, AppProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
     final serial = provider.selectedDevice!.serial;
     final deviceName = provider.selectedDevice!.name ?? serial;
 
@@ -519,7 +653,7 @@ class HomeScreen extends StatelessWidget {
         builder: (ctx) => AlertDialog(
           icon: Icon(
             allOk ? Icons.check_circle : Icons.warning_amber,
-            color: allOk ? Colors.green : Colors.orange,
+            color: allOk ? AppColors.success : AppColors.warning,
             size: 48,
           ),
           title: Text(allOk ? "Netflix Updated" : "Netflix Update Incomplete"),
@@ -537,7 +671,7 @@ class HomeScreen extends StatelessWidget {
                         children: [
                           Icon(
                             entry.value ? Icons.check : Icons.close,
-                            color: entry.value ? Colors.green : Colors.red,
+                            color: entry.value ? AppColors.success : colorScheme.error,
                             size: 18,
                           ),
                           const SizedBox(width: 8),
@@ -598,6 +732,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _showDefaultLauncherDialog(BuildContext context, AppProvider provider) async {
+    final colorScheme = Theme.of(context).colorScheme;
     // Show loading dialog
     showDialog(
       context: context,
@@ -654,7 +789,7 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   "Current default: $currentDefaultComponent",
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                 ),
               ],
               const SizedBox(height: 12),
@@ -666,10 +801,12 @@ class HomeScreen extends StatelessWidget {
                     component == currentDefaultComponent;
 
                 return ListTile(
-                  tileColor: isCurrentDefault ? Colors.green.withValues(alpha: 0.12) : null,
+                  tileColor: isCurrentDefault
+                      ? AppColors.success.withValues(alpha: 0.12)
+                      : null,
                   leading: Icon(
                     isCurrentDefault ? Icons.check_circle : Icons.home_outlined,
-                    color: isCurrentDefault ? Colors.green[700] : null,
+                    color: isCurrentDefault ? AppColors.success : null,
                   ),
                   title: Text(
                     isCurrentDefault ? "$label (Current Default)" : label,
@@ -679,7 +816,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     pkg,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                   ),
                   trailing: ElevatedButton(
                     onPressed: () async {
@@ -687,9 +824,9 @@ class HomeScreen extends StatelessWidget {
                       if (component.isEmpty) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Could not determine launcher activity component."),
-                              backgroundColor: Colors.red,
+                            SnackBar(
+                              content: const Text("Could not determine launcher activity component."),
+                              backgroundColor: colorScheme.error,
                             ),
                           );
                         }
@@ -717,7 +854,7 @@ class HomeScreen extends StatelessWidget {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(feedback),
-                            backgroundColor: verified ? Colors.green : Colors.red,
+                            backgroundColor: verified ? AppColors.success : colorScheme.error,
                             duration: const Duration(seconds: 7),
                           ),
                         );
@@ -741,6 +878,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _showDeveloperOptionsDialog(BuildContext context, AppProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
     final serial = provider.selectedDevice!.serial;
     final deviceName = provider.selectedDevice!.name ?? serial;
 
@@ -819,7 +957,7 @@ class HomeScreen extends StatelessWidget {
                           builder: (ctx2) => AlertDialog(
                             icon: Icon(
                               allOk ? Icons.check_circle : Icons.warning_amber,
-                              color: allOk ? Colors.green : Colors.orange,
+                              color: allOk ? AppColors.success : AppColors.warning,
                               size: 48,
                             ),
                             title: Text(allOk ? "Settings Applied" : "Partial Success"),
@@ -828,7 +966,7 @@ class HomeScreen extends StatelessWidget {
                               children: results.entries.map((e) => Row(
                                 children: [
                                   Icon(e.value ? Icons.check : Icons.close,
-                                    color: e.value ? Colors.green : Colors.red, size: 18),
+                                    color: e.value ? AppColors.success : colorScheme.error, size: 18),
                                   const SizedBox(width: 8),
                                   Expanded(child: Text(e.key)),
                                 ],

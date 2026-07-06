@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
+import '../theme/app_theme.dart';
 
 class PelotonUninstallerDialog extends StatefulWidget {
   const PelotonUninstallerDialog({super.key});
@@ -45,6 +46,7 @@ class _PelotonUninstallerDialogState extends State<PelotonUninstallerDialog> {
 
   void _confirmAndUninstall() async {
     if (_selected.isEmpty) return;
+    final colorScheme = Theme.of(context).colorScheme;
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -55,7 +57,7 @@ class _PelotonUninstallerDialogState extends State<PelotonUninstallerDialog> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true), 
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: colorScheme.error),
             child: const Text("Proceed"),
           ),
         ],
@@ -74,6 +76,7 @@ class _PelotonUninstallerDialogState extends State<PelotonUninstallerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: const Text("Uninstall Peloton Apps"),
       content: SizedBox(
@@ -84,14 +87,18 @@ class _PelotonUninstallerDialogState extends State<PelotonUninstallerDialog> {
             // Warning
              Container(
               padding: const EdgeInsets.all(10),
-              color: Colors.red[50], // Light red background
-              child: const Column(
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: colorScheme.error.withValues(alpha: 0.28)),
+              ),
+              child: Column(
                 children: [
                    Text("⚠️ WARNING: IRREVERSIBLE ACTION ⚠️", 
-                     style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                   SizedBox(height: 5),
+                     style: TextStyle(color: colorScheme.onErrorContainer, fontWeight: FontWeight.bold)),
+                   const SizedBox(height: 5),
                    Text("Uninstalling core Peloton system applications may render your tablet completely UNUSABLE (brick it).",
-                     textAlign: TextAlign.center, style: TextStyle(color: Colors.red)),
+                     textAlign: TextAlign.center, style: TextStyle(color: colorScheme.onErrorContainer)),
                 ],
               ),
             ),
@@ -147,7 +154,7 @@ class _PelotonUninstallerDialogState extends State<PelotonUninstallerDialog> {
           icon: const Icon(Icons.delete),
           label: const Text("UNINSTALL SELECTED"),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red, 
+            backgroundColor: AppColors.danger,
             foregroundColor: Colors.white
           ),
         ),

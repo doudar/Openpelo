@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/installed_app_model.dart';
 import '../providers/app_provider.dart';
+import '../theme/app_theme.dart';
 import 'draggable_dialog.dart';
 import 'screen_mirror_dialog.dart';
 
@@ -76,6 +77,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
   }
 
   Future<void> _confirmClearData(InstalledAppModel app) async {
+    final colorScheme = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -91,7 +93,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: colorScheme.error),
             child: const Text("Clear Data"),
           ),
         ],
@@ -109,6 +111,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
   }
 
   Future<void> _confirmUninstall(InstalledAppModel app) async {
+    final colorScheme = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -124,7 +127,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: colorScheme.error),
             child: const Text("Uninstall"),
           ),
         ],
@@ -291,10 +294,11 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
   }
 
   Widget _buildStatusBar(int filteredCount) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: colorScheme.surfaceContainerHighest,
       child: Row(
         children: [
           Expanded(
@@ -302,7 +306,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
               _statusMessage ?? "$filteredCount of ${_apps.length} apps shown",
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _statusIsError ? Colors.red[700] : null,
+                    color: _statusIsError ? colorScheme.error : null,
                     fontWeight: _statusMessage == null
                         ? FontWeight.normal
                         : FontWeight.w600,
@@ -341,13 +345,14 @@ class _InstalledAppTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
       leading: Icon(app.isSystemApp ? Icons.android : Icons.apps),
       title: Text(app.label, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         app.packageName,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: Colors.grey[700]),
+        style: TextStyle(color: colorScheme.onSurfaceVariant),
       ),
       trailing: Wrap(
         spacing: 4,
@@ -375,7 +380,7 @@ class _InstalledAppTile extends StatelessWidget {
           IconButton(
             tooltip: "Uninstall",
             onPressed: app.isSystemApp ? null : onUninstall,
-            color: Colors.red,
+            color: AppColors.danger,
             icon: const Icon(Icons.delete_outline),
           ),
         ],

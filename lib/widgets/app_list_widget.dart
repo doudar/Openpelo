@@ -20,6 +20,7 @@ class _AppListWidgetState extends State<AppListWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Consumer<AppProvider>(
       builder: (context, provider, child) {
         if (provider.availableApps.isEmpty) {
@@ -28,7 +29,7 @@ class _AppListWidgetState extends State<AppListWidget> {
               provider.selectedDevice == null 
                 ? "Select a device to view compatible applications."
                 : "No compatible applications found for this device.",
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           );
         }
@@ -38,14 +39,34 @@ class _AppListWidgetState extends State<AppListWidget> {
           thumbVisibility: true,
           trackVisibility: true,
           controller: _scrollController,
-          child: ListView.builder(
+          child: ListView.separated(
             controller: _scrollController,
+            padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: apps.length,
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 56,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.58),
+            ),
             itemBuilder: (context, index) {
               final app = apps[index];
               return CheckboxListTile(
-                title: Text(app.name),
-                subtitle: Text(app.description),
+                contentPadding: const EdgeInsets.only(left: 16, right: 24),
+                visualDensity: const VisualDensity(horizontal: 0, vertical: -1),
+                title: Text(
+                  app.name,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                subtitle: Text(
+                  app.description,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                ),
                 value: app.isSelected,
                 onChanged: (val) {
                   app.isSelected = val ?? false;
