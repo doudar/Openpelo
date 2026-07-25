@@ -561,39 +561,57 @@ class AppProvider with ChangeNotifier {
 
   Future<void> installLocalApk(Future<bool> Function(String appName) onConfirmReinstall) async {
     if (selectedDevice == null) return;
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['apk'],
-    );
 
-    if (result != null) {
-      final path = result.files.single.path;
-      if (path != null) {
-        _setBusy(true);
-        try {
-          final filename = p.basename(path);
-          _onLog("Installing local APK: $filename", 'info');
-          String output = await _adbService.installApk(selectedDevice!.serial, path);
+    final useStandardPicker = Platform.isMacOS;
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: useStandardPicker ? FileType.any : FileType.custom,
+        allowedExtensions: useStandardPicker ? null : ['apk'],
+        dialogTitle: 'Select APK to install',
+      );
+    } on PlatformException catch (e) {
+      _onLog("Could not open APK picker: ${e.message ?? e.code}", 'error');
+      return;
+    } catch (e) {
+      _onLog("Could not open APK picker: $e", 'error');
+      return;
+    }
 
-          output = await _resolveInstallConflictIfNeeded(
-            output: output,
-            appName: filename,
-            packageHint: null,
-            onConfirmReinstall: onConfirmReinstall,
-            retryInstall: () => _adbService.installApk(selectedDevice!.serial, path),
-          );
+    final path = result?.files.single.path;
+    if (path == null) {
+      _onLog("Local APK install canceled.", 'info');
+      return;
+    }
 
-          if (output.contains('Success')) {
-            _onLog("Successfully installed local APK", 'info');
-          } else {
-            _onLog("Failed install: $output", 'error');
-          }
-        } catch (e) {
-           _onLog("Failed install: $e", 'error');
-        } finally {
-          _setBusy(false);
-        }
+    if (p.extension(path).toLowerCase() != '.apk') {
+      _onLog("Selected file is not an APK: ${p.basename(path)}", 'error');
+      return;
+    }
+
+    _setBusy(true);
+    try {
+      final filename = p.basename(path);
+      _onLog("Installing local APK: $filename", 'info');
+      String output = await _adbService.installApk(selectedDevice!.serial, path);
+
+      output = await _resolveInstallConflictIfNeeded(
+        output: output,
+        appName: filename,
+        packageHint: null,
+        onConfirmReinstall: onConfirmReinstall,
+        retryInstall: () => _adbService.installApk(selectedDevice!.serial, path),
+      );
+
+      if (output.contains('Success')) {
+        _onLog("Successfully installed local APK", 'info');
+      } else {
+        _onLog("Failed install: $output", 'error');
       }
+    } catch (e) {
+      _onLog("Failed install: $e", 'error');
+    } finally {
+      _setBusy(false);
     }
   }
 
