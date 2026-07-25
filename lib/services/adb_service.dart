@@ -64,8 +64,7 @@ class AdbService {
               await outFile.writeAsBytes(data);
               
               if (!Platform.isWindows && filename.endsWith('adb')) {
-                 // Make executable
-                 await Process.run('chmod', ['+x', outFile.path]);
+                await _prepareAdbExecutable(outFile.path);
               }
             }
            }
@@ -75,10 +74,18 @@ class AdbService {
       
       // Ensure executable permissions are set on Mac/Linux even if file already existed
       if (!Platform.isWindows && _adbPath != null) {
-          await Process.run('/bin/chmod', ['+x', _adbPath!]);
+        await _prepareAdbExecutable(_adbPath!);
       }
     } catch (e) {
       onLog("Error initializing ADB: $e", 'error');
+    }
+  }
+
+  Future<void> _prepareAdbExecutable(String path) async {
+    await Process.run('/bin/chmod', ['+x', path]);
+
+    if (Platform.isMacOS) {
+      await Process.run('/usr/bin/xattr', ['-d', 'com.apple.quarantine', path]);
     }
   }
 

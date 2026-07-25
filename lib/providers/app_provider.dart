@@ -24,6 +24,9 @@ class LogEntry {
 }
 
 class AppProvider with ChangeNotifier {
+  static const MethodChannel _nativeFilePickerChannel =
+      MethodChannel('openpelo/native_file_picker');
+
   final AdbService _adbService;
   final ConfigService _configService = ConfigService();
   static final Uri _openpeloLatestReleaseApiUri =
@@ -562,14 +565,11 @@ class AppProvider with ChangeNotifier {
   Future<void> installLocalApk(Future<bool> Function(String appName) onConfirmReinstall) async {
     if (selectedDevice == null) return;
 
-    final useStandardPicker = Platform.isMacOS;
-    FilePickerResult? result;
+    String? path;
     try {
-      result = await FilePicker.platform.pickFiles(
-        type: useStandardPicker ? FileType.any : FileType.custom,
-        allowedExtensions: useStandardPicker ? null : ['apk'],
-        dialogTitle: 'Select APK to install',
-      );
+      path = Platform.isMacOS
+          ? await _pickMacOSApk()
+          : await _pickApkWithFilePicker();
     } on PlatformException catch (e) {
       _onLog("Could not open APK picker: ${e.message ?? e.code}", 'error');
       return;
@@ -578,7 +578,6 @@ class AppProvider with ChangeNotifier {
       return;
     }
 
-    final path = result?.files.single.path;
     if (path == null) {
       _onLog("Local APK install canceled.", 'info');
       return;
@@ -589,18 +588,19 @@ class AppProvider with ChangeNotifier {
       return;
     }
 
+    final apkPath = path;
     _setBusy(true);
     try {
-      final filename = p.basename(path);
+      final filename = p.basename(apkPath);
       _onLog("Installing local APK: $filename", 'info');
-      String output = await _adbService.installApk(selectedDevice!.serial, path);
+      String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
 
       output = await _resolveInstallConflictIfNeeded(
         output: output,
         appName: filename,
         packageHint: null,
         onConfirmReinstall: onConfirmReinstall,
-        retryInstall: () => _adbService.installApk(selectedDevice!.serial, path),
+        retryInstall: () => _adbService.installApk(selectedDevice!.serial, apkPath),
       );
 
       if (output.contains('Success')) {
@@ -613,6 +613,23 @@ class AppProvider with ChangeNotifier {
     } finally {
       _setBusy(false);
     }
+  }
+
+  Future<String?> _pickMacOSApk() async {
+    try {
+      return await _nativeFilePickerChannel.invokeMethod<String>('pickApk');
+    } on MissingPluginException {
+      return _pickApkWithFilePicker();
+    }
+  }
+
+  Future<String?> _pickApkWithFilePicker() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['apk'],
+      dialogTitle: 'Select APK to install',
+    );
+    return result?.files.single.path;
   }
 
   void toggleRecording() async {
