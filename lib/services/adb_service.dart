@@ -248,8 +248,42 @@ class AdbService {
       }
     }
 
-    final result = await runAdbCommand(['-s', serial, 'install', '-r', '-d', '-g', '-t', apkPath]);
-    return result.stdout.toString() + result.stderr.toString();
+    final installAttempts = <List<String>>[
+      ['-r', '-d', '-g', '-t'],
+      ['-r', '-g', '-t'],
+      ['-r', '-t'],
+      ['-r'],
+    ];
+
+    ProcessResult? lastResult;
+    for (final flags in installAttempts) {
+      final result = await runAdbCommand(['-s', serial, 'install', ...flags, apkPath]);
+      lastResult = result;
+      final output = result.stdout.toString() + result.stderr.toString();
+
+      if (output.contains('Success')) {
+        return output;
+      }
+
+      final unsupportedOption = _unsupportedInstallOption(output);
+      if (unsupportedOption == null || !flags.contains(unsupportedOption)) {
+        return output;
+      }
+
+      onLog(
+        "Device package manager does not support install option $unsupportedOption; retrying with older-device flags.",
+        'info',
+      );
+    }
+
+    return lastResult == null
+        ? "Error: Install did not run"
+        : lastResult.stdout.toString() + lastResult.stderr.toString();
+  }
+
+  String? _unsupportedInstallOption(String output) {
+    final match = RegExp(r'Unknown option:\s+(-{1,2}\S+)').firstMatch(output);
+    return match?.group(1);
   }
 
   Future<String> uninstallPackage(String serial, String packageName) async {
