@@ -7,20 +7,50 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.4'
+
 jobs:
-  bump-version:
+  validate:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Flutter SDK
+        uses: flutter-actions/setup-flutter@v4.2
+        with:
+          channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-sdk: true
+      - name: Install dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze project source
+        run: flutter analyze
+      - name: Run tests
+        run: flutter test
+
+  bump-version:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
       build_ref: ${{ steps.bump.outputs.build_ref }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       
@@ -47,7 +77,6 @@ jobs:
 
             git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
             git push origin main --tags
-            git push
 
             echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
             echo "build_ref=refs/tags/v$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -59,22 +88,25 @@ jobs:
     needs: bump-version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.build_ref }}
 
       - name: Setup Flutter SDK
-        uses: flutter-actions/setup-flutter@v3
+        uses: flutter-actions/setup-flutter@v4.2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-sdk: true
 
       - name: Install Inno Setup
         run: |
-          choco install innosetup
+          choco install innosetup --no-progress -y
 
       - name: Install dependencies
         working-directory: .
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build Windows
         working-directory: .
@@ -83,7 +115,7 @@ jobs:
       - name: Create Installer
         working-directory: windows
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" InnoSetupScript.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ needs.bump-version.outputs.new_version }}" InnoSetupScript.iss
 
       - name: Upload Installer
         uses: actions/upload-artifact@v4
@@ -95,21 +127,24 @@ jobs:
     needs: bump-version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.build_ref }}
 
       - name: Setup Flutter SDK
-        uses: flutter-actions/setup-flutter@v3
+        uses: flutter-actions/setup-flutter@v4.2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-sdk: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       # Install Certificate (Copied from previous workflow)
       - name: Install Apple Certificate
-        if: runner.os == 'macOS'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
             BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
             P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -128,6 +163,7 @@ jobs:
         run: flutter build macos --release
 
       - name: Sign App Bundle
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env: 
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
         run: |
@@ -158,12 +194,14 @@ jobs:
             "dmg_source/"
 
       - name: Sign DMG
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env: 
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
         run: |
           codesign --force --verbose --timestamp --sign "$CODESIGN_IDENTITY" dist/OpenPelo-macOS.dmg
 
       - name: Notarize DMG
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           AC_USERNAME: ${{ secrets.AC_USERNAME }}
           AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
@@ -176,6 +214,7 @@ jobs:
             --wait
 
       - name: Staple Ticket
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           xcrun stapler staple dist/OpenPelo-macOS.dmg
 
@@ -189,7 +228,7 @@ jobs:
     needs: bump-version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.build_ref }}
 
@@ -199,12 +238,15 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
       - name: Setup Flutter SDK
-        uses: flutter-actions/setup-flutter@v3
+        uses: flutter-actions/setup-flutter@v4.2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+          cache-sdk: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Build Linux
         run: flutter build linux --release
@@ -224,9 +266,11 @@ jobs:
   create-release:
     needs: [bump-version, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download Windows Artifact
         uses: actions/download-artifact@v4

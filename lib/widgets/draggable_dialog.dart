@@ -50,9 +50,14 @@ class _DraggableDialogState extends State<DraggableDialog> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
-        final maxWidth = math.max(0.0, constraints.maxWidth - (_edgePadding * 2));
-        final maxHeight =
-            math.max(0.0, constraints.maxHeight - (_edgePadding * 2));
+        final maxWidth = math.max(
+          0.0,
+          constraints.maxWidth - (_edgePadding * 2),
+        );
+        final maxHeight = math.max(
+          0.0,
+          constraints.maxHeight - (_edgePadding * 2),
+        );
         final dialogSize = Size(
           math.min(widget.width, maxWidth),
           math.min(widget.height, maxHeight),

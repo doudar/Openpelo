@@ -26,9 +26,9 @@ class _AppListWidgetState extends State<AppListWidget> {
         if (provider.availableApps.isEmpty) {
           return Center(
             child: Text(
-              provider.selectedDevice == null 
-                ? "Select a device to view compatible applications."
-                : "No compatible applications found for this device.",
+              provider.selectedDevice == null
+                  ? "Select a device to view compatible applications."
+                  : "No compatible applications found for this device.",
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           );
@@ -56,21 +56,20 @@ class _AppListWidgetState extends State<AppListWidget> {
                 visualDensity: const VisualDensity(horizontal: 0, vertical: -1),
                 title: Text(
                   app.name,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
                   app.description,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.35,
-                      ),
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
                 ),
                 value: app.isSelected,
                 onChanged: (val) {
-                  app.isSelected = val ?? false;
-                  provider.notifyListeners(); // A bit hacky to modify object then notify
+                  provider.setAppSelected(app.name, val ?? false);
                 },
               );
             },

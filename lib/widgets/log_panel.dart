@@ -54,7 +54,9 @@ class _LogPanelState extends State<LogPanel> {
               // Only scroll when new logs are added, not on every rebuild
               if (logs.length != _lastLogCount) {
                 _lastLogCount = logs.length;
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _scrollToBottom(),
+                );
               }
 
               return Scrollbar(
@@ -63,7 +65,12 @@ class _LogPanelState extends State<LogPanel> {
                 controller: _scrollController,
                 child: ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.only(top: 8, left: 8, right: 8, bottom: 40),
+                  padding: const EdgeInsets.only(
+                    top: 8,
+                    left: 8,
+                    right: 8,
+                    bottom: 40,
+                  ),
                   itemCount: logs.length,
                   itemBuilder: (context, index) {
                     final entry = logs[index];
@@ -74,12 +81,20 @@ class _LogPanelState extends State<LogPanel> {
                         children: [
                           TextSpan(
                             text: "${entry.timestamp} ",
-                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          TextSpan(text: entry.message, style: TextStyle(color: color)),
+                          TextSpan(
+                            text: entry.message,
+                            style: TextStyle(color: color),
+                          ),
                         ],
                       ),
-                      style: const TextStyle(fontFamily: 'Consolas', fontSize: 12),
+                      style: const TextStyle(
+                        fontFamily: 'Consolas',
+                        fontSize: 12,
+                      ),
                     );
                   },
                 ),
@@ -94,8 +109,12 @@ class _LogPanelState extends State<LogPanel> {
               shape: const CircleBorder(),
               child: IconButton(
                 icon: Icon(
-                  _autoScroll ? Icons.vertical_align_bottom : Icons.pause_circle_outline,
-                  color: _autoScroll ? AppColors.primary : colorScheme.onSurfaceVariant,
+                  _autoScroll
+                      ? Icons.vertical_align_bottom
+                      : Icons.pause_circle_outline,
+                  color: _autoScroll
+                      ? AppColors.primary
+                      : colorScheme.onSurfaceVariant,
                 ),
                 tooltip: _autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF",
                 onPressed: () {

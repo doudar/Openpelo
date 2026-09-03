@@ -14,21 +14,27 @@ class GuideDialog extends StatelessWidget {
         width: 400, // Reasonable width for desktop dialog
         child: SingleChildScrollView(
           child: Column(
-             mainAxisSize: MainAxisSize.min,
-             children: steps.asMap().entries.map((entry) {
-               final index = entry.key;
-               final step = entry.value;
-               return ListTile(
-                  leading: CircleAvatar(child: Text("${index + 1}")),
-                  title: Text(step['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(step['description'] ?? ''),
-               );
-             }).toList(),
+            mainAxisSize: MainAxisSize.min,
+            children: steps.asMap().entries.map((entry) {
+              final index = entry.key;
+              final step = entry.value;
+              return ListTile(
+                leading: CircleAvatar(child: Text("${index + 1}")),
+                title: Text(
+                  step['title'] ?? '',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(step['description'] ?? ''),
+              );
+            }).toList(),
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Close"))
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text("Close"),
+        ),
       ],
     );
   }

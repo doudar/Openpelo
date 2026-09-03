@@ -9,7 +9,7 @@ class DeviceModel {
 
   DeviceModel({
     required this.serial,
-    required this.status, 
+    required this.status,
     required this.transport,
     this.ip,
     this.port,
@@ -19,8 +19,25 @@ class DeviceModel {
 
   String get displayName {
     if (transport == 'wifi' && ip != null) {
-      return "$name • WiFi ($ip${port!=null ?':$port':''})";
+      return "$name • WiFi ($ip${port != null ? ':$port' : ''})";
     }
     return "$name • USB";
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is DeviceModel &&
+            serial == other.serial &&
+            status == other.status &&
+            transport == other.transport &&
+            ip == other.ip &&
+            port == other.port &&
+            name == other.name &&
+            abi == other.abi;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(serial, status, transport, ip, port, name, abi);
 }

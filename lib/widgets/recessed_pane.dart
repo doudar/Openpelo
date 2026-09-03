@@ -31,10 +31,7 @@ class RecessedPane extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Padding(
-                    padding: padding,
-                    child: child,
-                  ),
+                  child: Padding(padding: padding, child: child),
                 ),
                 _RecessedEdge(
                   alignment: Alignment.topCenter,

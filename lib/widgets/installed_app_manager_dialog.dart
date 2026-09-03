@@ -70,10 +70,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
   }
 
   void _showRemoteControl() {
-    showDialog(
-      context: context,
-      builder: (_) => const ScreenMirrorDialog(),
-    );
+    showDialog(context: context, builder: (_) => const ScreenMirrorDialog());
   }
 
   Future<void> _confirmClearData(InstalledAppModel app) async {
@@ -165,10 +162,7 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
       leading: const Icon(Icons.apps),
       title: const Text(
         "Installed App Manager",
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-        ),
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
       ),
       actions: [
         IconButton(
@@ -237,19 +231,14 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
 
     return ListView.separated(
       itemCount: filteredApps.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final app = filteredApps[index];
         return _InstalledAppTile(
           app: app,
           onLaunch: () async {
-            final provider = Provider.of<AppProvider>(
-              context,
-              listen: false,
-            );
-            final ok = await provider.launchInstalledApp(
-              app.packageName,
-            );
+            final provider = Provider.of<AppProvider>(context, listen: false);
+            final ok = await provider.launchInstalledApp(app.packageName);
             await _showResult(
               ok,
               "Launched ${app.label}",
@@ -258,13 +247,8 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
             if (ok && mounted) _showRemoteControl();
           },
           onForceStop: () async {
-            final provider = Provider.of<AppProvider>(
-              context,
-              listen: false,
-            );
-            final ok = await provider.forceStopInstalledApp(
-              app.packageName,
-            );
+            final provider = Provider.of<AppProvider>(context, listen: false);
+            final ok = await provider.forceStopInstalledApp(app.packageName);
             await _showResult(
               ok,
               "Force stopped ${app.label}",
@@ -273,13 +257,8 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
           },
           onClearData: () => _confirmClearData(app),
           onSettings: () async {
-            final provider = Provider.of<AppProvider>(
-              context,
-              listen: false,
-            );
-            final ok = await provider.openAppSettings(
-              app.packageName,
-            );
+            final provider = Provider.of<AppProvider>(context, listen: false);
+            final ok = await provider.openAppSettings(app.packageName);
             await _showResult(
               ok,
               "Opened settings for ${app.label}",
@@ -306,11 +285,11 @@ class _InstalledAppManagerDialogState extends State<InstalledAppManagerDialog> {
               _statusMessage ?? "$filteredCount of ${_apps.length} apps shown",
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _statusIsError ? colorScheme.error : null,
-                    fontWeight: _statusMessage == null
-                        ? FontWeight.normal
-                        : FontWeight.w600,
-                  ),
+                color: _statusIsError ? colorScheme.error : null,
+                fontWeight: _statusMessage == null
+                    ? FontWeight.normal
+                    : FontWeight.w600,
+              ),
             ),
           ),
           if (_statusMessage != null)

@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -11,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
 import '../services/config_service.dart';
+import '../services/release_asset_selector.dart';
 import '../models/app_model.dart';
 import '../models/device_model.dart';
 import '../models/installed_app_model.dart';
@@ -24,20 +26,24 @@ class LogEntry {
 }
 
 class AppProvider with ChangeNotifier {
-  static const MethodChannel _nativeFilePickerChannel =
-      MethodChannel('openpelo/native_file_picker');
+  static const MethodChannel _nativeFilePickerChannel = MethodChannel(
+    'openpelo/native_file_picker',
+  );
 
   final AdbService _adbService;
   final ConfigService _configService = ConfigService();
-  static final Uri _openpeloLatestReleaseApiUri =
-      Uri.https('api.github.com', '/repos/doudar/openpelo/releases/latest');
-  static final Uri _openpeloReleasesPageUri =
-      Uri.parse('https://github.com/doudar/openpelo/releases/');
+  static final Uri _openpeloLatestReleaseApiUri = Uri.https(
+    'api.github.com',
+    '/repos/doudar/openpelo/releases/latest',
+  );
+  static final Uri _openpeloReleasesPageUri = Uri.parse(
+    'https://github.com/doudar/openpelo/releases/',
+  );
   static const Map<String, String> _githubApiHeaders = {
     'User-Agent': 'Openpelo/1.0',
     'Accept': 'application/vnd.github+json',
   };
-  
+
   List<LogEntry> logs = [];
   List<DeviceModel> devices = [];
   Map<String, AppModel> availableApps = {};
@@ -45,6 +51,7 @@ class AppProvider with ChangeNotifier {
   String statusMessage = "Checking device connection...";
   bool isBusy = false;
   Timer? _heartbeatTimer;
+  bool _isCheckingDevices = false;
   Process? _recordingProcess;
   bool isRecording = false;
   String? _saveLocation;
@@ -95,7 +102,10 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> openReleasesPage() async {
-    if (!await launchUrl(latestReleasePageUrl, mode: LaunchMode.externalApplication)) {
+    if (!await launchUrl(
+      latestReleasePageUrl,
+      mode: LaunchMode.externalApplication,
+    )) {
       _onLog("Could not open releases page: $latestReleasePageUrl", 'error');
     }
   }
@@ -188,7 +198,9 @@ class AppProvider with ChangeNotifier {
         .map((p) => int.tryParse(p) ?? 0)
         .toList();
 
-    final length = aParts.length > bParts.length ? aParts.length : bParts.length;
+    final length = aParts.length > bParts.length
+        ? aParts.length
+        : bParts.length;
     for (var index = 0; index < length; index++) {
       final aPart = index < aParts.length ? aParts[index] : 0;
       final bPart = index < bParts.length ? bParts[index] : 0;
@@ -209,10 +221,11 @@ class AppProvider with ChangeNotifier {
     }
     notifyListeners();
   }
-  
+
   String get saveLocation => _saveLocation ?? "";
 
   void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!isBusy) {
         _checkDevices(silent: true);
@@ -221,39 +234,51 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> _checkDevices({bool silent = false}) async {
-    final newDevices = await _adbService.getConnectedDevices();
-    
-    // Simple check if changes to avoid unnecessary re-renders/logs
-    // In a real app we might want deep equality check
-    if (newDevices.length != devices.length || 
-        (newDevices.isNotEmpty && devices.isNotEmpty && newDevices[0].serial != devices[0].serial)) {
+    if (_isCheckingDevices) return;
+    _isCheckingDevices = true;
+    try {
+      final newDevices = await _adbService.getConnectedDevices();
+      if (!listEquals(newDevices, devices)) {
         devices = newDevices;
-        
+
         if (devices.isEmpty) {
-          statusMessage = "❌ No device detected. Please connect your device and enable USB debugging.";
+          statusMessage =
+              "❌ No device detected. Please connect your device and enable USB debugging.";
           selectedDevice = null;
           availableApps = {};
         } else {
           // Select first if none selected or previous selection gone
-          if (selectedDevice == null || !devices.any((d) => d.serial == selectedDevice!.serial)) {
-             // Prefer wifi
-             selectedDevice = devices.firstWhere((d) => d.transport == 'wifi', orElse: () => devices.first);
+          if (selectedDevice == null ||
+              !devices.any((d) => d.serial == selectedDevice!.serial)) {
+            // Prefer wifi
+            selectedDevice = devices.firstWhere(
+              (d) => d.transport == 'wifi',
+              orElse: () => devices.first,
+            );
           } else {
-             // Update selected device info
-             selectedDevice = devices.firstWhere((d) => d.serial == selectedDevice!.serial);
+            // Update selected device info
+            selectedDevice = devices.firstWhere(
+              (d) => d.serial == selectedDevice!.serial,
+            );
           }
-          
+
           statusMessage = "✅ Connected to ${selectedDevice!.displayName}";
           if (!silent) _onLog(statusMessage, 'status');
           _loadApps();
         }
         notifyListeners();
+      }
+    } finally {
+      _isCheckingDevices = false;
     }
   }
 
   Future<void> _loadApps() async {
     if (selectedDevice == null) return;
-    availableApps = await _configService.loadApps(selectedDevice!.abi);
+    final targetSerial = selectedDevice!.serial;
+    final apps = await _configService.loadApps(selectedDevice!.abi);
+    if (selectedDevice?.serial != targetSerial) return;
+    availableApps = apps;
     notifyListeners();
   }
 
@@ -264,58 +289,78 @@ class AppProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void setAppSelected(String appName, bool selected) {
+    final app = availableApps[appName];
+    if (app == null || app.isSelected == selected) return;
+    app.isSelected = selected;
+    notifyListeners();
+  }
+
   Future<void> refresh() async {
     await _checkDevices();
   }
 
-  Future<String> _resolveDownloadUrl(String url, String? packageName) async {
+  Future<String> _resolveDownloadUrl(AppModel app) async {
     try {
+      final url = app.url;
       final uri = Uri.parse(url);
       if (uri.host == 'github.com' && uri.pathSegments.length >= 2) {
         final owner = uri.pathSegments[0];
         final repo = uri.pathSegments[1];
-        if (uri.pathSegments.contains('releases') && uri.pathSegments.contains('latest')) {
-          final apiUrl = Uri.https('api.github.com', '/repos/$owner/$repo/releases/latest');
-          return _resolveDownloadUrl(apiUrl.toString(), packageName);
+        if (uri.pathSegments.contains('releases') &&
+            uri.pathSegments.contains('latest')) {
+          final apiUrl = Uri.https(
+            'api.github.com',
+            '/repos/$owner/$repo/releases/latest',
+          );
+          final apiApp = AppModel(
+            name: app.name,
+            description: app.description,
+            url: apiUrl.toString(),
+            assetName: app.assetName,
+            assetPattern: app.assetPattern,
+            packageId: app.packageId,
+            sha256: app.sha256,
+            abi: app.abi,
+          );
+          return _resolveDownloadUrl(apiApp);
         }
       }
       if (uri.host.contains('api.github.com')) {
-         _onLog("Resolving GitHub API URL...", 'info');
-         final response = await _httpGetWithWindowsTlsFallback(
-           uri,
-           headers: _githubApiHeaders,
-         );
+        _onLog("Resolving GitHub API URL...", 'info');
+        final response = await _httpGetWithWindowsTlsFallback(
+          uri,
+          headers: _githubApiHeaders,
+        );
 
-         if (response.statusCode == 200) {
-            final json = jsonDecode(response.body);
-            final List<dynamic> assets = json['assets'] ?? [];
-            if (assets.isEmpty) return url;
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          final List<dynamic> assets = json['assets'] ?? [];
+          if (assets.isEmpty) return url;
 
-            // 1. Try exact match
-            if (packageName != null) {
-              final exact = assets.firstWhere((a) => a['name'] == packageName, orElse: () => null);
-              if (exact != null) return exact['browser_download_url'];
-            }
-
-            // 2. Try .apk
-            final apk = assets.firstWhere((a) => a['name'].toString().toLowerCase().endsWith('.apk'), orElse: () => null);
-            if (apk != null) return apk['browser_download_url'];
-
-            // 3. Fallback
-            return assets.first['browser_download_url'];
-         }
+          final selectedName = selectApkAssetName(
+            assets.map((asset) => asset['name'].toString()),
+            exactName: app.assetName,
+            globPattern: app.assetPattern,
+          );
+          final selected = assets.singleWhere(
+            (asset) => asset['name'].toString() == selectedName,
+          );
+          return selected['browser_download_url'].toString();
+        }
       }
       return url;
     } catch (e) {
       _onLog("Error resolving URL: $e", 'error');
-      return url;
+      rethrow;
     }
   }
 
   Map<String, String> _buildDownloadHeaders(Uri uri) {
     final headers = <String, String>{
       // Some hosts block requests without a UA; keep this stable for all downloads.
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Accept-Language': 'en-US,en;q=0.9',
     };
@@ -328,6 +373,10 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<bool> _downloadToFile(Uri uri, File file) async {
+    if (uri.scheme.toLowerCase() != 'https') {
+      _onLog('Refusing non-HTTPS download: $uri', 'error');
+      return false;
+    }
     final headers = _buildDownloadHeaders(uri);
     final client = HttpClient();
     client.userAgent = headers['User-Agent'];
@@ -336,6 +385,13 @@ class AppProvider with ChangeNotifier {
       headers.forEach(request.headers.add);
       request.followRedirects = true;
       final response = await request.close();
+
+      if (response.redirects.any(
+        (redirect) => redirect.location.scheme.toLowerCase() == 'http',
+      )) {
+        _onLog('Refusing download redirected to HTTP: $uri', 'error');
+        return false;
+      }
 
       if (response.statusCode != HttpStatus.ok) {
         _onLog("Failed to download (Status: ${response.statusCode})", 'error');
@@ -348,18 +404,49 @@ class AppProvider with ChangeNotifier {
 
       final sink = file.openWrite();
       await response.pipe(sink);
-      await sink.flush();
-      await sink.close();
       return true;
     } catch (e) {
       if (Platform.isWindows && _isWindowsTlsHandshakeError(e)) {
-        _onLog("TLS handshake failed. Retrying download with Windows curl...", 'info');
+        _onLog(
+          "TLS handshake failed. Retrying download with Windows curl...",
+          'info',
+        );
         return _downloadToFileWithWindowsCurl(uri, file, headers: headers);
       }
       _onLog("Download error: $e", 'error');
       return false;
     } finally {
       client.close(force: true);
+    }
+  }
+
+  Future<bool> _validateDownloadedApk(File file, String? expectedSha256) async {
+    try {
+      final randomAccessFile = await file.open();
+      final signature = await randomAccessFile.read(4);
+      await randomAccessFile.close();
+      final isZip =
+          signature.length == 4 &&
+          signature[0] == 0x50 &&
+          signature[1] == 0x4b &&
+          signature[2] == 0x03 &&
+          signature[3] == 0x04;
+      if (!isZip) {
+        _onLog('Downloaded file is not a valid APK/ZIP archive.', 'error');
+        return false;
+      }
+
+      if (expectedSha256 != null && expectedSha256.trim().isNotEmpty) {
+        final actual = (await sha256.bind(file.openRead()).first).toString();
+        if (actual.toLowerCase() != expectedSha256.trim().toLowerCase()) {
+          _onLog('Downloaded APK failed SHA-256 verification.', 'error');
+          return false;
+        }
+      }
+      return true;
+    } catch (e) {
+      _onLog('Could not validate downloaded APK: $e', 'error');
+      return false;
     }
   }
 
@@ -384,7 +471,10 @@ class AppProvider with ChangeNotifier {
       return await http.get(uri, headers: headers);
     } catch (e) {
       if (Platform.isWindows && _isWindowsTlsHandshakeError(e)) {
-        _onLog("TLS handshake failed. Retrying request with Windows curl...", 'info');
+        _onLog(
+          "TLS handshake failed. Retrying request with Windows curl...",
+          'info',
+        );
         final body = await _httpGetBodyWithWindowsCurl(uri, headers: headers);
         if (body != null) {
           return http.Response(body, HttpStatus.ok);
@@ -406,6 +496,10 @@ class AppProvider with ChangeNotifier {
       '--fail',
       '--max-redirs',
       '5',
+      '--proto',
+      '=https',
+      '--proto-redir',
+      '=https',
     ];
 
     headers.forEach((key, value) {
@@ -481,8 +575,9 @@ class AppProvider with ChangeNotifier {
     String output,
     String? packageHint,
   ) {
-    final match = RegExp(r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures')
-        .firstMatch(output);
+    final match = RegExp(
+      r'Package\s+([a-zA-Z0-9_\.]+)\s+signatures',
+    ).firstMatch(output);
     return match?.group(1) ?? packageHint;
   }
 
@@ -516,43 +611,54 @@ class AppProvider with ChangeNotifier {
     return retryInstall();
   }
 
-  Future<void> installSelectedApps(Future<bool> Function(String appName) onConfirmReinstall) async {
+  Future<void> installSelectedApps(
+    Future<bool> Function(String appName) onConfirmReinstall,
+  ) async {
     if (selectedDevice == null) return;
-    final appsToInstall = availableApps.values.where((a) => a.isSelected).toList();
+    final appsToInstall = availableApps.values
+        .where((a) => a.isSelected)
+        .toList();
     if (appsToInstall.isEmpty) return;
 
     _setBusy(true);
-    
+
     try {
       for (final app in appsToInstall) {
-        
-        final downloadUrl = await _resolveDownloadUrl(app.url, app.package);
-        
-          final downloadUri = Uri.parse(downloadUrl);
-          _onLog("Downloading ${app.name} from $downloadUrl...", 'info');
-          final tempDir = await getTemporaryDirectory();
-          // Ensure unique name or use package name to avoid conflicts/caching if needed
-          final filename = app.package ?? "${app.name.replaceAll(' ', '_')}.apk";
-          final apkPath = p.join(tempDir.path, filename);
-          final file = File(apkPath);
-          final ok = await _downloadToFile(downloadUri, file);
-          if (ok) {
-            _onLog("Installing ${app.name}...", 'info');
-            String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
+        final downloadUrl = await _resolveDownloadUrl(app);
 
-            output = await _resolveInstallConflictIfNeeded(
-              output: output,
-              appName: app.name,
-              packageHint: app.package,
-              onConfirmReinstall: onConfirmReinstall,
-              retryInstall: () => _adbService.installApk(selectedDevice!.serial, apkPath),
-            );
+        final downloadUri = Uri.parse(downloadUrl);
+        _onLog("Downloading ${app.name} from $downloadUrl...", 'info');
+        final tempDir = await getTemporaryDirectory();
+        // Ensure unique name or use package name to avoid conflicts/caching if needed
+        final filename =
+            app.assetName ?? "${app.name.replaceAll(' ', '_')}.apk";
+        final apkPath = p.join(tempDir.path, filename);
+        final file = File(apkPath);
+        final ok = await _downloadToFile(downloadUri, file);
+        final isValid = ok && await _validateDownloadedApk(file, app.sha256);
+        if (isValid) {
+          _onLog("Installing ${app.name}...", 'info');
+          String output = await _adbService.installApk(
+            selectedDevice!.serial,
+            apkPath,
+          );
 
-           if (output.contains('Success')) {
-             _onLog("Successfully installed ${app.name}", 'info');
-           } else {
-             _onLog("Error installing ${app.name}: $output", 'error');
-           }
+          output = await _resolveInstallConflictIfNeeded(
+            output: output,
+            appName: app.name,
+            packageHint: app.packageId,
+            onConfirmReinstall: onConfirmReinstall,
+            retryInstall: () =>
+                _adbService.installApk(selectedDevice!.serial, apkPath),
+          );
+
+          if (output.contains('Success')) {
+            _onLog("Successfully installed ${app.name}", 'info');
+          } else {
+            _onLog("Error installing ${app.name}: $output", 'error');
+          }
+        } else if (await file.exists()) {
+          await file.delete();
         }
       }
     } catch (e) {
@@ -562,7 +668,9 @@ class AppProvider with ChangeNotifier {
     }
   }
 
-  Future<void> installLocalApk(Future<bool> Function(String appName) onConfirmReinstall) async {
+  Future<void> installLocalApk(
+    Future<bool> Function(String appName) onConfirmReinstall,
+  ) async {
     if (selectedDevice == null) return;
 
     String? path;
@@ -593,14 +701,18 @@ class AppProvider with ChangeNotifier {
     try {
       final filename = p.basename(apkPath);
       _onLog("Installing local APK: $filename", 'info');
-      String output = await _adbService.installApk(selectedDevice!.serial, apkPath);
+      String output = await _adbService.installApk(
+        selectedDevice!.serial,
+        apkPath,
+      );
 
       output = await _resolveInstallConflictIfNeeded(
         output: output,
         appName: filename,
         packageHint: null,
         onConfirmReinstall: onConfirmReinstall,
-        retryInstall: () => _adbService.installApk(selectedDevice!.serial, apkPath),
+        retryInstall: () =>
+            _adbService.installApk(selectedDevice!.serial, apkPath),
       );
 
       if (output.contains('Success')) {
@@ -624,48 +736,51 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<String?> _pickApkWithFilePicker() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['apk'],
       dialogTitle: 'Select APK to install',
     );
-    return result?.files.single.path;
+    return result?.path;
   }
 
   void toggleRecording() async {
     if (selectedDevice == null) return;
-    
+
     if (isRecording) {
       // Stop recording
       if (_recordingProcess != null) {
-         _recordingProcess!.kill(ProcessSignal.sigint); // Send SIGINT to stop gracefully if possible? 
-         // Screenrecord on android usually stops on SIGINT (CTRL+C).
-         // Process.kill uses SIGTERM by default. 
-         // Let's try sending literal arbitrary signal or just kill.
-         _onLog("Stopping recording...", 'info');
-         // Wait a bit?
-         await Future.delayed(Duration(seconds: 1));
+        _recordingProcess!.kill(
+          ProcessSignal.sigint,
+        ); // Send SIGINT to stop gracefully if possible?
+        // Screenrecord on android usually stops on SIGINT (CTRL+C).
+        // Process.kill uses SIGTERM by default.
+        // Let's try sending literal arbitrary signal or just kill.
+        _onLog("Stopping recording...", 'info');
+        // Wait a bit?
+        await Future.delayed(Duration(seconds: 1));
       }
       isRecording = false;
       notifyListeners();
-      
+
       // Pull
       _setBusy(true);
       try {
-         final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-         final filename = "recording_$date.mp4";
-         final savePath = p.join(saveLocation, filename);
-         await _adbService.pullRecording(selectedDevice!.serial, savePath);
-         _onLog("Recording saved to $savePath", 'info');
+        final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+        final filename = "recording_$date.mp4";
+        final savePath = p.join(saveLocation, filename);
+        await _adbService.pullRecording(selectedDevice!.serial, savePath);
+        _onLog("Recording saved to $savePath", 'info');
       } catch (e) {
-         _onLog("Failed to save recording: $e", 'error');
+        _onLog("Failed to save recording: $e", 'error');
       } finally {
         _setBusy(false);
       }
-
     } else {
       try {
-        _recordingProcess = await _adbService.startRecording(selectedDevice!.serial);
+        _recordingProcess = await _adbService.startRecording(
+          selectedDevice!.serial,
+        );
         isRecording = true;
         _onLog("Recording started...", 'info');
         notifyListeners();
@@ -676,16 +791,16 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> takeScreenshot() async {
-     if (selectedDevice == null) return;
-     try {
-       final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-       final filename = "screenshot_$date.png";
-       final savePath = p.join(saveLocation, filename);
-       await _adbService.takeScreenshot(selectedDevice!.serial, savePath);
-       _onLog("Screenshot saved to $savePath", 'info');
-     } catch (e) {
-       _onLog("Screenshot failed: $e", 'error');
-     }
+    if (selectedDevice == null) return;
+    try {
+      final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = "screenshot_$date.png";
+      final savePath = p.join(saveLocation, filename);
+      await _adbService.takeScreenshot(selectedDevice!.serial, savePath);
+      _onLog("Screenshot saved to $savePath", 'info');
+    } catch (e) {
+      _onLog("Screenshot failed: $e", 'error');
+    }
   }
 
   Future<Uint8List?> getScreenShotBytes() async {
@@ -732,7 +847,7 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> chooseSaveLocation() async {
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    String? selectedDirectory = await FilePicker.getDirectoryPath();
     if (selectedDirectory != null) {
       _saveLocation = selectedDirectory;
       notifyListeners();
@@ -744,17 +859,26 @@ class AppProvider with ChangeNotifier {
       final jsonString = await rootBundle.loadString(filename);
       final json = jsonDecode(jsonString);
       final List<dynamic> steps = json['steps'];
-      return steps.map((s) => {
-        'title': s['title'].toString(),
-        'description': s['description'].toString()
-      }).toList();
+      return steps
+          .map(
+            (s) => {
+              'title': s['title'].toString(),
+              'description': s['description'].toString(),
+            },
+          )
+          .toList();
     } catch (e) {
       _onLog("Error loading guide $filename: $e", 'error');
       return [];
     }
   }
 
-  Future<void> connectWireless(String ip, String port, String code, String connectionPort) async {
+  Future<void> connectWireless(
+    String ip,
+    String port,
+    String code,
+    String connectionPort,
+  ) async {
     _setBusy(true);
     try {
       if (code.isNotEmpty && port.isNotEmpty) {
@@ -762,11 +886,11 @@ class AppProvider with ChangeNotifier {
         await _adbService.pairDevice(ip, port, code);
         _onLog("Pairing command sent.", 'info');
       }
-      
+
       _onLog("Connecting to $ip:$connectionPort...", 'info');
       await _adbService.connectWifi(ip, port: connectionPort);
       _onLog("Connection command sent.", 'info');
-      
+
       // Wait a bit and check devices
       await Future.delayed(const Duration(seconds: 2));
       await _checkDevices();
@@ -784,26 +908,32 @@ class AppProvider with ChangeNotifier {
     try {
       _onLog("Switching $serial to TCP/IP mode on port 5555...", 'info');
       await _adbService.connectTcpIp(serial);
-      
+
       // Give the device a moment to restart in tcpip mode
       await Future.delayed(const Duration(seconds: 2));
-      
+
       _onLog("Querying device IP address...", 'info');
       final ip = await _adbService.getDeviceIp(serial);
       if (ip == null || ip.isEmpty) {
-        _onLog("Could not determine device IP. Make sure the device is connected to WiFi.", 'error');
+        _onLog(
+          "Could not determine device IP. Make sure the device is connected to WiFi.",
+          'error',
+        );
         return null;
       }
-      
+
       _onLog("Device IP: $ip. Connecting wirelessly...", 'info');
       await _adbService.connectWifi(ip, port: '5555');
-      
-      _onLog("Wireless connection established. You can now unplug the USB cable.", 'status');
-      
+
+      _onLog(
+        "Wireless connection established. You can now unplug the USB cable.",
+        'status',
+      );
+
       // Wait a bit and refresh device list
       await Future.delayed(const Duration(seconds: 2));
       await _checkDevices();
-      
+
       return ip;
     } catch (e) {
       _onLog("Failed to enable wireless ADB via USB: $e", 'error');
@@ -824,10 +954,12 @@ class AppProvider with ChangeNotifier {
     final results = <String, bool>{};
     try {
       if (wirelessDebugging) {
-        results['Wireless Debugging'] = await _adbService.enableWirelessDebugging(serial);
+        results['Wireless Debugging'] = await _adbService
+            .enableWirelessDebugging(serial);
       }
       if (stayAwake) {
-        results['Stay Awake While Charging'] = await _adbService.enableStayAwake(serial);
+        results['Stay Awake While Charging'] = await _adbService
+            .enableStayAwake(serial);
       }
     } catch (e) {
       _onLog("Error enabling developer settings: $e", 'error');
@@ -855,7 +987,10 @@ class AppProvider with ChangeNotifier {
   Future<bool> openAppSettings(String packageName) async {
     if (selectedDevice == null) return false;
     try {
-      return await _adbService.openAppSettings(selectedDevice!.serial, packageName);
+      return await _adbService.openAppSettings(
+        selectedDevice!.serial,
+        packageName,
+      );
     } catch (e) {
       _onLog("Error opening app settings: $e", 'error');
       return false;
@@ -867,7 +1002,10 @@ class AppProvider with ChangeNotifier {
     if (selectedDevice == null) return false;
     _setBusy(true);
     try {
-      return await _adbService.setDefaultLauncher(selectedDevice!.serial, component);
+      return await _adbService.setDefaultLauncher(
+        selectedDevice!.serial,
+        component,
+      );
     } catch (e) {
       _onLog("Error setting default launcher: $e", 'error');
       return false;
@@ -880,7 +1018,9 @@ class AppProvider with ChangeNotifier {
   Future<String?> getDefaultLauncherComponent() async {
     if (selectedDevice == null) return null;
     try {
-      return await _adbService.getDefaultLauncherComponent(selectedDevice!.serial);
+      return await _adbService.getDefaultLauncherComponent(
+        selectedDevice!.serial,
+      );
     } catch (e) {
       _onLog("Error getting default launcher: $e", 'error');
       return null;
@@ -1005,10 +1145,12 @@ class AppProvider with ChangeNotifier {
     final date = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
     final path = p.join(saveLocation, 'installed_apps_$date.txt');
     final file = File(path);
-    final lines = apps.map((app) {
-      final type = app.isSystemApp ? 'system' : 'user';
-      return '${app.label}\t${app.packageName}\t$type';
-    }).join('\n');
+    final lines = apps
+        .map((app) {
+          final type = app.isSystemApp ? 'system' : 'user';
+          return '${app.label}\t${app.packageName}\t$type';
+        })
+        .join('\n');
     await file.writeAsString('Label\tPackage\tType\n$lines\n');
     _onLog("Installed app list exported to $path", 'info');
     return path;
@@ -1039,34 +1181,36 @@ class AppProvider with ChangeNotifier {
     _setBusy(true);
     List<Map<String, String>> devices = [];
     try {
-       _onLog("Scanning for wireless devices (mDNS)...", 'info');
-       devices = await _adbService.getMdnsServices();
+      _onLog("Scanning for wireless devices (mDNS)...", 'info');
+      devices = await _adbService.getMdnsServices();
 
-       // If mDNS scan fails to find devices or if a port is explicitly requested (scan specific mode)
-       // We scan the local subnet.
-       // Note: mDNS usually finds the pairing service (port ~30000-45000) or connect service (5555).
-       // If empty, let's try to scan port 5555 on the subnet.
-       
-       if (devices.isEmpty || port != null) {
-          int targetPort = port ?? 5555;
-          _onLog("Scanning subnet for port $targetPort...", 'info');
-          List<String> foundIps = await _adbService.scanNetworkForPort(targetPort);
-          for (var ip in foundIps) {
-             devices.add({
-               'name': 'Scanned Device ($ip)',
-               'ip': ip,
-               'port': targetPort.toString()
-             });
-          }
-       } else {
-         _onLog("Found ${devices.length} devices.", 'info');
-       }
-       return devices;
+      // If mDNS scan fails to find devices or if a port is explicitly requested (scan specific mode)
+      // We scan the local subnet.
+      // Note: mDNS usually finds the pairing service (port ~30000-45000) or connect service (5555).
+      // If empty, let's try to scan port 5555 on the subnet.
+
+      if (devices.isEmpty || port != null) {
+        int targetPort = port ?? 5555;
+        _onLog("Scanning subnet for port $targetPort...", 'info');
+        List<String> foundIps = await _adbService.scanNetworkForPort(
+          targetPort,
+        );
+        for (var ip in foundIps) {
+          devices.add({
+            'name': 'Scanned Device ($ip)',
+            'ip': ip,
+            'port': targetPort.toString(),
+          });
+        }
+      } else {
+        _onLog("Found ${devices.length} devices.", 'info');
+      }
+      return devices;
     } catch (e) {
       _onLog("Scan error: $e", 'error');
       return devices;
     } finally {
-       _setBusy(false);
+      _setBusy(false);
     }
   }
 
@@ -1075,18 +1219,20 @@ class AppProvider with ChangeNotifier {
     _setBusy(true);
     try {
       _onLog("Scanning for Peloton packages...", 'info');
-      final allPackages = await _adbService.listPackages(selectedDevice!.serial);
-      
+      final allPackages = await _adbService.listPackages(
+        selectedDevice!.serial,
+      );
+
       // Filter logic from python script:
       // 'peloton' in name AND not 'affernet' AND not 'input' AND not 'sensor'
       final pelotonPackages = allPackages.where((pkg) {
         final lower = pkg.toLowerCase();
-        return lower.contains('peloton') && 
-               !lower.contains('affernet') && 
-               !lower.contains('input') && 
-               !lower.contains('sensor');
+        return lower.contains('peloton') &&
+            !lower.contains('affernet') &&
+            !lower.contains('input') &&
+            !lower.contains('sensor');
       }).toList();
-      
+
       pelotonPackages.sort();
       return pelotonPackages;
     } catch (e) {
@@ -1097,48 +1243,66 @@ class AppProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, int>> uninstallPelotonPackages(List<String> packages) async {
+  Future<Map<String, int>> uninstallPelotonPackages(
+    List<String> packages,
+  ) async {
     if (selectedDevice == null) return {'success': 0, 'fail': 0};
 
     _setBusy(true);
-    
+
     int success = 0;
     int fail = 0;
 
     try {
       for (final pkg in packages) {
-         _onLog("Uninstalling $pkg...", 'info');
-         String output = await _adbService.uninstallPackage(selectedDevice!.serial, pkg);
-         
-         if (output.contains('Success')) {
-           success++;
-           _onLog("Successfully uninstalled $pkg", 'status');
-         } else {
-           _onLog("Standard uninstall failed, trying user 0 override...", 'info');
-           output = await _adbService.uninstallPackageUser0(selectedDevice!.serial, pkg);
-           if (output.contains('Success')) {
-             success++;
-             _onLog("Successfully uninstalled $pkg (user 0)", 'status');
-           } else {
-             fail++;
-             _onLog("Failed to uninstall $pkg: $output", 'error');
-           }
-         }
+        _onLog("Uninstalling $pkg...", 'info');
+        String output = await _adbService.uninstallPackage(
+          selectedDevice!.serial,
+          pkg,
+        );
+
+        if (output.contains('Success')) {
+          success++;
+          _onLog("Successfully uninstalled $pkg", 'status');
+        } else {
+          _onLog(
+            "Standard uninstall failed, trying user 0 override...",
+            'info',
+          );
+          output = await _adbService.uninstallPackageUser0(
+            selectedDevice!.serial,
+            pkg,
+          );
+          if (output.contains('Success')) {
+            success++;
+            _onLog("Successfully uninstalled $pkg (user 0)", 'status');
+          } else {
+            fail++;
+            _onLog("Failed to uninstall $pkg: $output", 'error');
+          }
+        }
       }
     } catch (e) {
       _onLog("Batch uninstall error: $e", 'error');
     } finally {
       _setBusy(false);
     }
-    
+
     return {'success': success, 'fail': fail};
   }
 
   void openSaveLocation() {
     if (_saveLocation != null) {
-       // use url_launcher or process to open folder
-       // url_launcher 'file:$path' works on some OS
-       Process.run(Platform.isWindows ? 'explorer' : 'open', [_saveLocation!]); 
+      // use url_launcher or process to open folder
+      // url_launcher 'file:$path' works on some OS
+      Process.run(Platform.isWindows ? 'explorer' : 'open', [_saveLocation!]);
     }
+  }
+
+  @override
+  void dispose() {
+    _heartbeatTimer?.cancel();
+    _recordingProcess?.kill();
+    super.dispose();
   }
 }

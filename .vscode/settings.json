@@ -1,4 +1,5 @@
 {
     "dotnet.defaultSolution": "build/windows/x64/openpelo.sln",
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.compile.nullAnalysis.mode": "automatic"
 }

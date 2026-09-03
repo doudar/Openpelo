@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -14,9 +13,11 @@ import '../models/device_model.dart';
 import '../models/installed_app_model.dart';
 
 class AdbService {
+  static const bundledPlatformToolsRevision = '37.0.1';
+
   String? _adbPath;
   Function(String message, String tag) onLog;
-  
+
   // Mobile Adb Client state
   String? _connectedIp;
   int _connectedPort = 5555;
@@ -37,9 +38,21 @@ class AdbService {
       final adbDir = Directory(p.join(dir.path, 'platform-tools'));
       String adbExecutableName = Platform.isWindows ? 'adb.exe' : 'adb';
       _adbPath = p.join(adbDir.path, adbExecutableName);
+      final installedRevision = await _platformToolsRevision(adbDir);
 
-      if (!await File(_adbPath!).exists()) {
-        onLog("Setting up ADB...", 'info');
+      if (!await File(_adbPath!).exists() ||
+          installedRevision != bundledPlatformToolsRevision) {
+        onLog(
+          installedRevision == null
+              ? "Setting up ADB..."
+              : "Updating ADB from $installedRevision to "
+                    "$bundledPlatformToolsRevision...",
+          'info',
+        );
+        if (await File(_adbPath!).exists()) {
+          // A persistent ADB server can keep adb.exe locked on Windows.
+          await Process.run(_adbPath!, ['kill-server']);
+        }
         // Need to extract
         String zipAsset = '';
         if (Platform.isWindows) {
@@ -51,27 +64,41 @@ class AdbService {
         }
 
         if (zipAsset.isNotEmpty) {
-           final byteData = await rootBundle.load(zipAsset);
-           final bytes = byteData.buffer.asUint8List();
-           final archive = ZipDecoder().decodeBytes(bytes);
-           
-           for (final file in archive) {
+          final byteData = await rootBundle.load(zipAsset);
+          final bytes = byteData.buffer.asUint8List();
+          final archive = ZipDecoder().decodeBytes(bytes);
+
+          for (final file in archive) {
             final filename = file.name;
             if (file.isFile) {
               final data = file.content as List<int>;
-              final outFile = File(p.join(dir.path, filename));
+              final outputPath = p.normalize(p.join(dir.path, filename));
+              if (!p.isWithin(dir.path, outputPath)) {
+                throw FormatException(
+                  'Unsafe path in bundled platform-tools archive: $filename',
+                );
+              }
+              final outFile = File(outputPath);
               await outFile.parent.create(recursive: true);
               await outFile.writeAsBytes(data);
-              
+
               if (!Platform.isWindows && filename.endsWith('adb')) {
                 await _prepareAdbExecutable(outFile.path);
               }
             }
-           }
-           onLog("ADB extraction complete.", 'info');
+          }
+          final extractedRevision = await _platformToolsRevision(adbDir);
+          if (!await File(_adbPath!).exists() ||
+              extractedRevision != bundledPlatformToolsRevision) {
+            throw StateError(
+              'Bundled platform-tools extraction did not produce the expected '
+              'ADB $bundledPlatformToolsRevision installation.',
+            );
+          }
+          onLog("ADB extraction complete.", 'info');
         }
       }
-      
+
       // Ensure executable permissions are set on Mac/Linux even if file already existed
       if (!Platform.isWindows && _adbPath != null) {
         await _prepareAdbExecutable(_adbPath!);
@@ -79,6 +106,14 @@ class AdbService {
     } catch (e) {
       onLog("Error initializing ADB: $e", 'error');
     }
+  }
+
+  Future<String?> _platformToolsRevision(Directory adbDir) async {
+    final sourceProperties = File(p.join(adbDir.path, 'source.properties'));
+    if (!await sourceProperties.exists()) return null;
+
+    final contents = await sourceProperties.readAsString();
+    return parsePlatformToolsRevision(contents);
   }
 
   Future<void> _prepareAdbExecutable(String path) async {
@@ -89,25 +124,36 @@ class AdbService {
     }
   }
 
-  Future<ProcessResult> runAdbCommand(List<String> args) async {
+  Future<ProcessResult> runAdbCommand(
+    List<String> args, {
+    bool allowFailure = false,
+  }) async {
     if (isMobile) {
-       // Mobile stub for unsupported methods called via raw runAdb
-       return ProcessResult(0, 1, "", "Command not supported on mobile via runAdbCommand encapsulation.");
+      // Mobile stub for unsupported methods called via raw runAdb
+      return ProcessResult(
+        0,
+        1,
+        "",
+        "Command not supported on mobile via runAdbCommand encapsulation.",
+      );
     }
 
     if (_adbPath == null) await init();
     if (_adbPath == null) throw Exception("ADB not found");
 
-    onLog("\$ adb ${args.join(' ')}", 'command');
+    onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
     try {
       final result = await Process.run(_adbPath!, args);
       if (result.stdout.toString().isNotEmpty) {
-         // Filter out empty lines
-         final lines = result.stdout.toString().trim();
-         if (lines.isNotEmpty) onLog(lines, 'stdout');
+        // Filter out empty lines
+        final lines = result.stdout.toString().trim();
+        if (lines.isNotEmpty) onLog(lines, 'stdout');
       }
       if (result.stderr.toString().isNotEmpty) {
-         onLog(result.stderr.toString().trim(), 'stderr');
+        onLog(result.stderr.toString().trim(), 'stderr');
+      }
+      if (result.exitCode != 0 && !allowFailure) {
+        throw AdbCommandException(_argsForLog(args), result);
       }
       return result;
     } catch (e) {
@@ -116,26 +162,37 @@ class AdbService {
     }
   }
 
+  List<String> _argsForLog(List<String> args) {
+    if (args.isNotEmpty && args.first == 'pair' && args.length >= 3) {
+      return [...args.take(args.length - 1), '<redacted>'];
+    }
+    return args;
+  }
+
   Future<List<DeviceModel>> getConnectedDevices() async {
     if (isMobile) {
       if (_connectedIp != null) {
         // Ping to verify
         try {
-          final out = await Adb.sendSingleCommand('getprop ro.product.model', ip: _connectedIp!, port: _connectedPort);
+          final out = await Adb.sendSingleCommand(
+            'getprop ro.product.model',
+            ip: _connectedIp!,
+            port: _connectedPort,
+          );
           if (out.isNotEmpty) {
-             String? name = await getDeviceName(_connectedIp!);
-             String? abi = await getDeviceAbi(_connectedIp!);
-             return [
-               DeviceModel(
-                 serial: "$_connectedIp:$_connectedPort",
-                 status: "device",
-                 transport: 'wifi',
-                 ip: _connectedIp,
-                 port: _connectedPort.toString(),
-                 name: name,
-                 abi: abi
-               )
-             ];
+            String? name = await getDeviceName(_connectedIp!);
+            String? abi = await getDeviceAbi(_connectedIp!);
+            return [
+              DeviceModel(
+                serial: "$_connectedIp:$_connectedPort",
+                status: "device",
+                transport: 'wifi',
+                ip: _connectedIp,
+                port: _connectedPort.toString(),
+                name: name,
+                abi: abi,
+              ),
+            ];
           }
         } catch (e) {
           // Lost connection
@@ -148,17 +205,20 @@ class AdbService {
     try {
       final result = await runAdbCommand(['devices']);
       final output = result.stdout.toString();
-      final lines = output.split('\n').where((l) => l.trim().isNotEmpty).toList();
-      
+      final lines = output
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toList();
+
       List<DeviceModel> devices = [];
       // Skip first line "List of devices attached"
       for (var i = 1; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.isEmpty) continue;
-        
+
         final parts = line.split(RegExp(r'\s+'));
         if (parts.length < 2) continue;
-        
+
         final serial = parts[0];
         final status = parts[1];
 
@@ -179,15 +239,17 @@ class AdbService {
         String? name = await getDeviceName(serial);
         String? abi = await getDeviceAbi(serial);
 
-        devices.add(DeviceModel(
-          serial: serial,
-          status: status,
-          transport: transport,
-          ip: ip,
-          port: port,
-          name: name,
-          abi: abi,
-        ));
+        devices.add(
+          DeviceModel(
+            serial: serial,
+            status: status,
+            transport: transport,
+            ip: ip,
+            port: port,
+            name: name,
+            abi: abi,
+          ),
+        );
       }
       return devices;
     } catch (e) {
@@ -198,10 +260,20 @@ class AdbService {
   Future<String?> getDeviceAbi(String serial) async {
     if (isMobile) {
       if (_connectedIp == null) return null;
-      return await Adb.sendSingleCommand('getprop ro.product.cpu.abi', ip: _connectedIp!, port: _connectedPort);
+      return await Adb.sendSingleCommand(
+        'getprop ro.product.cpu.abi',
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
     }
     try {
-      final result = await runAdbCommand(['-s', serial, 'shell', 'getprop', 'ro.product.cpu.abi']);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'getprop',
+        'ro.product.cpu.abi',
+      ]);
       return result.stdout.toString().trim();
     } catch (e) {
       return null;
@@ -210,22 +282,42 @@ class AdbService {
 
   Future<String?> getDeviceName(String serial) async {
     if (isMobile) {
-       if (_connectedIp == null) return serial;
-       final manufacturer = await Adb.sendSingleCommand('getprop ro.product.manufacturer', ip: _connectedIp!, port: _connectedPort);
-       final model = await Adb.sendSingleCommand('getprop ro.product.model', ip: _connectedIp!, port: _connectedPort);
-       return "$manufacturer $model".trim();
+      if (_connectedIp == null) return serial;
+      final manufacturer = await Adb.sendSingleCommand(
+        'getprop ro.product.manufacturer',
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+      final model = await Adb.sendSingleCommand(
+        'getprop ro.product.model',
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+      return "$manufacturer $model".trim();
     }
 
     try {
       // manufacturer
-       final manResult = await runAdbCommand(['-s', serial, 'shell', 'getprop', 'ro.product.manufacturer']);
-       final manufacturer = manResult.stdout.toString().trim();
-       
-       // model
-       final modelResult = await runAdbCommand(['-s', serial, 'shell', 'getprop', 'ro.product.model']);
-       final model = modelResult.stdout.toString().trim();
+      final manResult = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'getprop',
+        'ro.product.manufacturer',
+      ]);
+      final manufacturer = manResult.stdout.toString().trim();
 
-       return "$manufacturer $model".trim();
+      // model
+      final modelResult = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'getprop',
+        'ro.product.model',
+      ]);
+      final model = modelResult.stdout.toString().trim();
+
+      return "$manufacturer $model".trim();
     } catch (e) {
       return serial;
     }
@@ -235,16 +327,20 @@ class AdbService {
     if (isMobile) {
       if (_connectedIp == null) return "Error: Not connected";
       try {
-         onLog("Uploading and installing APK...", 'info');
-         // Use the new installApk method from the fork
-         bool success = await Adb.installApk(apkPath, ip: _connectedIp!, port: _connectedPort);
-         if (success) {
-           return "Success";
-         } else {
-           return "Error: Installation returned false";
-         }
+        onLog("Uploading and installing APK...", 'info');
+        // Use the new installApk method from the fork
+        bool success = await Adb.installApk(
+          apkPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        if (success) {
+          return "Success";
+        } else {
+          return "Error: Installation returned false";
+        }
       } catch (e) {
-         return "Error installing APK: $e";
+        return "Error installing APK: $e";
       }
     }
 
@@ -257,7 +353,13 @@ class AdbService {
 
     ProcessResult? lastResult;
     for (final flags in installAttempts) {
-      final result = await runAdbCommand(['-s', serial, 'install', ...flags, apkPath]);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'install',
+        ...flags,
+        apkPath,
+      ], allowFailure: true);
       lastResult = result;
       final output = result.stdout.toString() + result.stderr.toString();
 
@@ -288,70 +390,108 @@ class AdbService {
 
   Future<String> uninstallPackage(String serial, String packageName) async {
     if (isMobile) {
-       if (_connectedIp == null) return "Error: Not connected";
-       final out = await Adb.sendSingleCommand('pm uninstall $packageName', ip: _connectedIp!, port: _connectedPort);
-       return out.isEmpty ? "Success" : out; // adb shell pm uninstall returns 'Success' or 'Failure' usually
+      if (_connectedIp == null) return "Error: Not connected";
+      final out = await Adb.sendSingleCommand(
+        'pm uninstall $packageName',
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+      return out.isEmpty
+          ? "Success"
+          : out; // adb shell pm uninstall returns 'Success' or 'Failure' usually
     }
 
-    final result = await runAdbCommand(['-s', serial, 'uninstall', packageName]);
+    final result = await runAdbCommand([
+      '-s',
+      serial,
+      'uninstall',
+      packageName,
+    ], allowFailure: true);
     return result.stdout.toString() + result.stderr.toString();
   }
 
-  Future<String> uninstallPackageUser0(String serial, String packageName) async {
+  Future<String> uninstallPackageUser0(
+    String serial,
+    String packageName,
+  ) async {
     if (isMobile) {
-       if (_connectedIp == null) return "Error: Not connected";
-       final out = await Adb.sendSingleCommand('pm uninstall --user 0 $packageName', ip: _connectedIp!, port: _connectedPort);
-       return out;
+      if (_connectedIp == null) return "Error: Not connected";
+      final out = await Adb.sendSingleCommand(
+        'pm uninstall --user 0 $packageName',
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+      return out;
     }
 
-    final result = await runAdbCommand(['-s', serial, 'shell', 'pm', 'uninstall', '--user', '0', packageName]);
+    final result = await runAdbCommand([
+      '-s',
+      serial,
+      'shell',
+      'pm',
+      'uninstall',
+      '--user',
+      '0',
+      packageName,
+    ], allowFailure: true);
     return result.stdout.toString() + result.stderr.toString();
   }
 
   Future<List<String>> listPackages(String serial) async {
-      if (isMobile) {
-        if (_connectedIp == null) return [];
-        try {
-          final output = await Adb.sendSingleCommand('pm list packages', ip: _connectedIp!, port: _connectedPort);
-            final List<String> packages = [];
-            for (var line in output.split('\n')) {
-                line = line.trim();
-                // output from shell might not have newlines cleanly or might be raw
-                if (line.startsWith('package:')) {
-                    packages.add(line.substring(8).trim());
-                } else if (line.contains('package:')) {
-                   // regex?
-                   final match = RegExp(r'package:([^\s]+)').firstMatch(line);
-                   if (match != null) packages.add(match.group(1)!);
-                }
-            }
-            return packages;
-        } catch (e) {
-          onLog("Mobile List Packages Error: $e", 'error');
-          return [];
-        }
-      }
-
+    if (isMobile) {
+      if (_connectedIp == null) return [];
       try {
-        final result = await runAdbCommand(['-s', serial, 'shell', 'pm', 'list', 'packages']);
-        final output = result.stdout.toString();
+        final output = await Adb.sendSingleCommand(
+          'pm list packages',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
         final List<String> packages = [];
         for (var line in output.split('\n')) {
-            line = line.trim();
-            if (line.startsWith('package:')) {
-                packages.add(line.substring(8).trim());
-            }
+          line = line.trim();
+          // output from shell might not have newlines cleanly or might be raw
+          if (line.startsWith('package:')) {
+            packages.add(line.substring(8).trim());
+          } else if (line.contains('package:')) {
+            // regex?
+            final match = RegExp(r'package:([^\s]+)').firstMatch(line);
+            if (match != null) packages.add(match.group(1)!);
+          }
         }
         return packages;
       } catch (e) {
-        onLog('Failed to list packages: $e', 'error');
+        onLog("Mobile List Packages Error: $e", 'error');
         return [];
       }
+    }
+
+    try {
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'pm',
+        'list',
+        'packages',
+      ]);
+      final output = result.stdout.toString();
+      final List<String> packages = [];
+      for (var line in output.split('\n')) {
+        line = line.trim();
+        if (line.startsWith('package:')) {
+          packages.add(line.substring(8).trim());
+        }
+      }
+      return packages;
+    } catch (e) {
+      onLog('Failed to list packages: $e', 'error');
+      return [];
+    }
   }
-  
+
   Future<void> connectTcpIp(String serial) async {
-     if (isMobile) return; // Cannot switch mode from mobile client
-     await runAdbCommand(['-s', serial, 'tcpip', '5555']);
+    if (isMobile) return; // Cannot switch mode from mobile client
+    await runAdbCommand(['-s', serial, 'tcpip', '5555']);
   }
 
   /// Enable wireless debugging quick settings tile on the device.
@@ -359,23 +499,49 @@ class AdbService {
     if (isMobile) return false;
     try {
       // Get current QS tiles
-      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'secure', 'sysui_qs_tiles']);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'get',
+        'secure',
+        'sysui_qs_tiles',
+      ]);
       final currentTiles = result.stdout.toString().trim();
-      
+
       if (currentTiles.contains('wireless_debugging')) {
         onLog("Wireless debugging tile already present.", 'info');
       } else {
         final newTiles = currentTiles.isEmpty || currentTiles == 'null'
             ? 'wireless_debugging'
             : '$currentTiles,wireless_debugging';
-        await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'secure', 'sysui_qs_tiles', newTiles]);
+        await runAdbCommand([
+          '-s',
+          serial,
+          'shell',
+          'settings',
+          'put',
+          'secure',
+          'sysui_qs_tiles',
+          newTiles,
+        ]);
         onLog("Added wireless_debugging to quick settings tiles.", 'info');
       }
-      
+
       // Also enable the wireless debugging setting itself
-      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'global', 'adb_wifi_enabled', '1']);
+      await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'put',
+        'global',
+        'adb_wifi_enabled',
+        '1',
+      ]);
       onLog("Enabled wireless ADB (adb_wifi_enabled=1).", 'info');
-      
+
       return true;
     } catch (e) {
       onLog("Failed to enable wireless debugging: $e", 'error');
@@ -387,7 +553,16 @@ class AdbService {
   Future<bool> enableStayAwake(String serial) async {
     if (isMobile) return false;
     try {
-      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'global', 'stay_on_while_plugged_in', '3']);
+      await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'put',
+        'global',
+        'stay_on_while_plugged_in',
+        '3',
+      ]);
       onLog("Enabled stay awake while charging.", 'info');
       return true;
     } catch (e) {
@@ -402,9 +577,27 @@ class AdbService {
     if (isMobile) return false;
     try {
       // Disable auto-rotation so the fixed rotation takes effect
-      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'accelerometer_rotation', '0']);
+      await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'put',
+        'system',
+        'accelerometer_rotation',
+        '0',
+      ]);
       // Set rotation value (0-3)
-      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'user_rotation', '$rotation']);
+      await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'put',
+        'system',
+        'user_rotation',
+        '$rotation',
+      ]);
       onLog("Set display rotation to $rotation.", 'info');
       return true;
     } catch (e) {
@@ -417,7 +610,15 @@ class AdbService {
   Future<int> getRotation(String serial) async {
     if (isMobile) return 0;
     try {
-      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'system', 'user_rotation']);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'get',
+        'system',
+        'user_rotation',
+      ]);
       return int.tryParse(result.stdout.toString().trim()) ?? 0;
     } catch (_) {
       return 0;
@@ -428,7 +629,15 @@ class AdbService {
   Future<bool> getAutoRotation(String serial) async {
     if (isMobile) return false;
     try {
-      final result = await runAdbCommand(['-s', serial, 'shell', 'settings', 'get', 'system', 'accelerometer_rotation']);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'get',
+        'system',
+        'accelerometer_rotation',
+      ]);
       return result.stdout.toString().trim() == '1';
     } catch (_) {
       return false;
@@ -439,7 +648,16 @@ class AdbService {
   Future<bool> setAutoRotation(String serial, bool enabled) async {
     if (isMobile) return false;
     try {
-      await runAdbCommand(['-s', serial, 'shell', 'settings', 'put', 'system', 'accelerometer_rotation', enabled ? '1' : '0']);
+      await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'settings',
+        'put',
+        'system',
+        'accelerometer_rotation',
+        enabled ? '1' : '0',
+      ]);
       onLog("Auto-rotation ${enabled ? 'enabled' : 'disabled'}.", 'info');
       return true;
     } catch (e) {
@@ -458,9 +676,9 @@ class AdbService {
         includeSystemApps: includeSystemApps,
       );
       apps.sort((a, b) {
-        final labelCompare = a.label
-            .toLowerCase()
-            .compareTo(b.label.toLowerCase());
+        final labelCompare = a.label.toLowerCase().compareTo(
+          b.label.toLowerCase(),
+        );
         if (labelCompare != 0) return labelCompare;
         return a.packageName.compareTo(b.packageName);
       });
@@ -506,10 +724,7 @@ class AdbService {
     final shellArgs = includeSystemApps
         ? ['pm', 'list', 'packages', '-f']
         : ['pm', 'list', 'packages', '-f', '-3'];
-    final result = await Process.run(
-      _adbPath!,
-      ['-s', serial, 'shell', ...shellArgs],
-    );
+    final result = await runAdbCommand(['-s', serial, 'shell', ...shellArgs]);
     return '${result.stdout}${result.stderr}';
   }
 
@@ -531,11 +746,13 @@ class AdbService {
 
       final sourcePath = pathMatch?.group(1) ?? '';
       final isSystemApp = includeSystemApps && !_isUserAppPath(sourcePath);
-      apps.add(InstalledAppModel(
-        packageName: packageName,
-        label: _labelFromPackageName(packageName),
-        isSystemApp: isSystemApp,
-      ));
+      apps.add(
+        InstalledAppModel(
+          packageName: packageName,
+          label: _labelFromPackageName(packageName),
+          isSystemApp: isSystemApp,
+        ),
+      );
     }
 
     return apps;
@@ -559,27 +776,15 @@ class AdbService {
         .split(RegExp(r'[_\s-]+'))
         .where((word) => word.isNotEmpty)
         .map((word) {
-      if (word.length == 1) return word.toUpperCase();
-      return '${word[0].toUpperCase()}${word.substring(1)}';
-    }).toList();
+          if (word.length == 1) return word.toUpperCase();
+          return '${word[0].toUpperCase()}${word.substring(1)}';
+        })
+        .toList();
 
     if (words.isEmpty) {
       return packageName;
     }
     return words.join(' ');
-  }
-
-  List<String> _parsePackageList(String output) {
-    final packages = <String>[];
-    for (var line in output.split('\n')) {
-      line = line.trim();
-      final match = RegExp(r'package:([^\s]+)').firstMatch(line);
-      if (match != null) {
-        packages.add(match.group(1)!);
-      }
-    }
-    packages.sort();
-    return packages;
   }
 
   Future<String> _runShellCommandText(String serial, String command) async {
@@ -609,7 +814,7 @@ class AdbService {
     if (_adbPath == null) await init();
     if (_adbPath == null) throw Exception("ADB not found");
 
-    final result = await Process.run(_adbPath!, ['-s', serial, 'shell', command]);
+    final result = await runAdbCommand(['-s', serial, 'shell', command]);
     return '${result.stdout}${result.stderr}';
   }
 
@@ -619,7 +824,8 @@ class AdbService {
         serial,
         'monkey -p $packageName -c android.intent.category.LAUNCHER 1',
       );
-      final ok = !output.toLowerCase().contains('no activities found') &&
+      final ok =
+          !output.toLowerCase().contains('no activities found') &&
           !output.toLowerCase().contains('error');
       onLog(
         ok ? "Launched $packageName" : "Could not launch $packageName",
@@ -645,8 +851,12 @@ class AdbService {
 
   Future<bool> clearPackageData(String serial, String packageName) async {
     try {
-      final output = await _runShellCommandText(serial, 'pm clear $packageName');
-      final ok = output.toLowerCase().contains('success') || output.trim().isEmpty;
+      final output = await _runShellCommandText(
+        serial,
+        'pm clear $packageName',
+      );
+      final ok =
+          output.toLowerCase().contains('success') || output.trim().isEmpty;
       onLog(
         ok
             ? "Cleared data for $packageName"
@@ -707,9 +917,15 @@ class AdbService {
     String? expectedOutput,
   }) async {
     try {
-      final result = await runAdbCommand(['-s', serial, 'shell', ...shellArgs]);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        ...shellArgs,
+      ], allowFailure: true);
       final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
-      final ok = result.exitCode == 0 &&
+      final ok =
+          result.exitCode == 0 &&
           (expectedOutput == null ||
               output.contains(expectedOutput.toLowerCase()));
       onLog("$label: ${ok ? 'OK' : 'Failed'}", ok ? 'info' : 'error');
@@ -738,12 +954,26 @@ class AdbService {
     results['Allow Netflix background runs'] = await _runShellStep(
       serial,
       'Allowing Netflix background runs',
-      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'RUN_IN_BACKGROUND', 'allow'],
+      [
+        'cmd',
+        'appops',
+        'set',
+        'com.netflix.mediaclient',
+        'RUN_IN_BACKGROUND',
+        'allow',
+      ],
     );
     results['Allow Netflix foreground service'] = await _runShellStep(
       serial,
       'Allowing Netflix foreground service',
-      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'START_FOREGROUND', 'allow'],
+      [
+        'cmd',
+        'appops',
+        'set',
+        'com.netflix.mediaclient',
+        'START_FOREGROUND',
+        'allow',
+      ],
     );
     results['Disable Peloton OEM cleanup plugin'] = await _runShellStep(
       serial,
@@ -777,12 +1007,26 @@ class AdbService {
     results['Restore Netflix background appop'] = await _runShellStep(
       serial,
       'Restoring Netflix background appop',
-      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'RUN_IN_BACKGROUND', 'default'],
+      [
+        'cmd',
+        'appops',
+        'set',
+        'com.netflix.mediaclient',
+        'RUN_IN_BACKGROUND',
+        'default',
+      ],
     );
     results['Restore Netflix foreground service appop'] = await _runShellStep(
       serial,
       'Restoring Netflix foreground service appop',
-      ['cmd', 'appops', 'set', 'com.netflix.mediaclient', 'START_FOREGROUND', 'default'],
+      [
+        'cmd',
+        'appops',
+        'set',
+        'com.netflix.mediaclient',
+        'START_FOREGROUND',
+        'default',
+      ],
     );
     results['Verify OEM plugin package'] = await _runShellStep(
       serial,
@@ -800,9 +1044,16 @@ class AdbService {
     if (isMobile) return [];
     try {
       final result = await runAdbCommand([
-        '-s', serial, 'shell', 'pm', 'query-activities',
-        '--components', '-a', 'android.intent.action.MAIN',
-        '-c', 'android.intent.category.HOME'
+        '-s',
+        serial,
+        'shell',
+        'pm',
+        'query-activities',
+        '--components',
+        '-a',
+        'android.intent.action.MAIN',
+        '-c',
+        'android.intent.category.HOME',
       ]);
       final output = result.stdout.toString().trim();
       final launchers = <Map<String, String>>[];
@@ -827,9 +1078,17 @@ class AdbService {
       // Fallback if query-activities returned nothing
       if (launchers.isEmpty) {
         final result2 = await runAdbCommand([
-          '-s', serial, 'shell', 'cmd', 'package', 'resolve-activity',
-          '--components', '-a', 'android.intent.action.MAIN',
-          '-c', 'android.intent.category.HOME'
+          '-s',
+          serial,
+          'shell',
+          'cmd',
+          'package',
+          'resolve-activity',
+          '--components',
+          '-a',
+          'android.intent.action.MAIN',
+          '-c',
+          'android.intent.category.HOME',
         ]);
         final output2 = result2.stdout.toString().trim();
         for (var line in output2.split('\n')) {
@@ -920,9 +1179,15 @@ class AdbService {
     if (isMobile) return false;
     try {
       await runAdbCommand([
-        '-s', serial, 'shell', 'am', 'start',
-        '-a', 'android.settings.APPLICATION_DETAILS_SETTINGS',
-        '-d', 'package:$packageName'
+        '-s',
+        serial,
+        'shell',
+        'am',
+        'start',
+        '-a',
+        'android.settings.APPLICATION_DETAILS_SETTINGS',
+        '-d',
+        'package:$packageName',
       ]);
       onLog("Opened app settings for $packageName on device", 'info');
       return true;
@@ -936,13 +1201,23 @@ class AdbService {
   Future<String?> _getAppLabel(String serial, String pkg) async {
     try {
       final result = await runAdbCommand([
-        '-s', serial, 'shell', 'dumpsys', 'package', pkg
+        '-s',
+        serial,
+        'shell',
+        'dumpsys',
+        'package',
+        pkg,
       ]);
       final output = result.stdout.toString();
-      final match = RegExp(r'targetSdk=.*?\n\s+.*?label[=:]([^\n]+)', caseSensitive: false).firstMatch(output);
+      final match = RegExp(
+        r'targetSdk=.*?\n\s+.*?label[=:]([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(output);
       if (match != null) {
         final label = match.group(1)?.trim();
-        if (label != null && label.isNotEmpty && !label.startsWith('0x')) return label;
+        if (label != null && label.isNotEmpty && !label.startsWith('0x')) {
+          return label;
+        }
       }
     } catch (_) {}
     return null;
@@ -957,14 +1232,28 @@ class AdbService {
   Future<String?> getDeviceIp(String serial) async {
     if (isMobile) return null;
     try {
-      final result = await runAdbCommand(['-s', serial, 'shell', 'ip', 'route']);
+      final result = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'ip',
+        'route',
+      ]);
       final output = result.stdout.toString();
       // Look for "src <IP>" in the output of `ip route`
       final match = RegExp(r'src\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output);
       if (match != null) return match.group(1);
 
       // Fallback: try `ip addr show wlan0`
-      final result2 = await runAdbCommand(['-s', serial, 'shell', 'ip', 'addr', 'show', 'wlan0']);
+      final result2 = await runAdbCommand([
+        '-s',
+        serial,
+        'shell',
+        'ip',
+        'addr',
+        'show',
+        'wlan0',
+      ]);
       final output2 = result2.stdout.toString();
       final match2 = RegExp(r'inet\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output2);
       if (match2 != null) return match2.group(1);
@@ -980,70 +1269,88 @@ class AdbService {
       _connectedIp = ip;
       _connectedPort = int.tryParse(port) ?? 5555;
       try {
-         await Adb.sendSingleCommand('echo init', ip: _connectedIp!, port: _connectedPort);
-         onLog("Mobile ADB Client set to $_connectedIp:$_connectedPort", 'info');
+        await Adb.sendSingleCommand(
+          'echo init',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        onLog("Mobile ADB Client set to $_connectedIp:$_connectedPort", 'info');
       } catch (e) {
-         _connectedIp = null;
-         throw e;
+        _connectedIp = null;
+        rethrow;
       }
       return;
     }
 
-    await runAdbCommand(['connect', '$ip:$port']);
+    final result = await runAdbCommand(['connect', '$ip:$port']);
+    final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+    if (output.contains('unable to connect') ||
+        output.contains('failed to connect') ||
+        output.contains('cannot connect')) {
+      throw AdbCommandException(['connect', '$ip:$port'], result);
+    }
   }
 
   Future<void> pairDevice(String ip, String port, String code) async {
     if (isMobile) {
-       onLog("Pairing not supported in simple flutter_adb client yet.", 'error');
-       return;
+      throw UnsupportedError(
+        'Pairing is not supported by the mobile ADB client.',
+      );
     }
-    await runAdbCommand(['pair', '$ip:$port', code]);
+    final result = await runAdbCommand(['pair', '$ip:$port', code]);
+    final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+    if (!output.contains('successfully paired')) {
+      throw AdbCommandException(['pair', '$ip:$port', '<redacted>'], result);
+    }
   }
 
   Future<List<Map<String, String>>> getMdnsServices() async {
     if (isMobile) {
-       // Use multicast_dns package
-       final List<Map<String, String>> services = [];
-       try {
-         final MDnsClient client = MDnsClient();
-         await client.start();
-         
-         // Look for _adb-tls-pairing._tcp.local and _adb._tcp.local ?
-         // Usually it is _adb-tls-pairing._tcp for Wireless Debugging (pairing port)
-         // And _adb._tcp for Connect port (if enabled via tcpip)
-         
-         // Helper for lookup so we can run both
-         Future<void> lookup(String type) async {
-            await for (final PtrResourceRecord ptr in client.lookup<PtrResourceRecord>(
-                ResourceRecordQuery.serverPointer(type))) {
-              
-              await for (final SrvResourceRecord srv in client.lookup<SrvResourceRecord>(
-                  ResourceRecordQuery.service(ptr.domainName))) {
-                
-                await for (final IPAddressResourceRecord ip in client.lookup<IPAddressResourceRecord>(
-                    ResourceRecordQuery.addressIPv4(srv.target))) {
-                  
-                  services.add({
-                    'name': ptr.domainName,
-                    'ip': ip.address.address,
-                    'port': srv.port.toString(),
-                    'type': type
-                  });
-                }
+      // Use multicast_dns package
+      final List<Map<String, String>> services = [];
+      try {
+        final MDnsClient client = MDnsClient();
+        await client.start();
+
+        // Look for _adb-tls-pairing._tcp.local and _adb._tcp.local ?
+        // Usually it is _adb-tls-pairing._tcp for Wireless Debugging (pairing port)
+        // And _adb._tcp for Connect port (if enabled via tcpip)
+
+        // Helper for lookup so we can run both
+        Future<void> lookup(String type) async {
+          await for (final PtrResourceRecord ptr
+              in client.lookup<PtrResourceRecord>(
+                ResourceRecordQuery.serverPointer(type),
+              )) {
+            await for (final SrvResourceRecord srv
+                in client.lookup<SrvResourceRecord>(
+                  ResourceRecordQuery.service(ptr.domainName),
+                )) {
+              await for (final IPAddressResourceRecord ip
+                  in client.lookup<IPAddressResourceRecord>(
+                    ResourceRecordQuery.addressIPv4(srv.target),
+                  )) {
+                services.add({
+                  'name': ptr.domainName,
+                  'ip': ip.address.address,
+                  'port': srv.port.toString(),
+                  'type': type,
+                });
               }
             }
-         }
+          }
+        }
 
-         await Future.wait([
-            lookup('_adb-tls-pairing._tcp.local'),
-            lookup('_adb._tcp.local')
-         ]);
-         
-         client.stop();
-       } catch (e) {
-         onLog("Mobile mDNS Error: $e", 'error');
-       }
-       return services;
+        await Future.wait([
+          lookup('_adb-tls-pairing._tcp.local'),
+          lookup('_adb._tcp.local'),
+        ]);
+
+        client.stop();
+      } catch (e) {
+        onLog("Mobile mDNS Error: $e", 'error');
+      }
+      return services;
     }
 
     try {
@@ -1054,22 +1361,27 @@ class AdbService {
 
       for (var line in lines) {
         line = line.trim();
-        if (line.isEmpty || line.toLowerCase().startsWith('list of discovered')) continue;
-        
+        if (line.isEmpty ||
+            line.toLowerCase().startsWith('list of discovered')) {
+          continue;
+        }
+
         final parts = line.split(RegExp(r'\s+'));
         if (parts.length < 3) continue;
 
         final instanceName = parts[0];
-        final serviceType = parts.length > 1 ? parts[1] : ''; // e.g. _adb-tls-pairing._tcp.
+        final serviceType = parts.length > 1
+            ? parts[1]
+            : ''; // e.g. _adb-tls-pairing._tcp.
         final hostPart = parts.last; // ip:port
 
         String? ip;
         String? port;
 
         if (hostPart.contains(':')) {
-           final split = hostPart.split(':');
-           ip = split[0];
-           port = split[1];
+          final split = hostPart.split(':');
+          ip = split[0];
+          port = split[1];
         }
 
         if (ip != null && port != null) {
@@ -1092,26 +1404,29 @@ class AdbService {
     try {
       final info = NetworkInfo();
       String? ip = await info.getWifiIP();
-      
+
       // Fallback for some environments (simulators etc)
       if (ip == null) {
-         final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLinkLocal: false);
-         for (var interface in interfaces) {
-           for (var addr in interface.addresses) {
-             if (!addr.isLoopback) {
-               ip = addr.address;
-               break;
-             }
-           }
-           if (ip != null) break;
-         }
+        final interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+          includeLinkLocal: false,
+        );
+        for (var interface in interfaces) {
+          for (var addr in interface.addresses) {
+            if (!addr.isLoopback) {
+              ip = addr.address;
+              break;
+            }
+          }
+          if (ip != null) break;
+        }
       }
 
       if (ip == null) {
         onLog("Could not determine local IP for scanning.", 'error');
         return [];
       }
-      
+
       onLog("Scanning subnet of $ip for port $port ...", 'info');
       final String subnet = ip.substring(0, ip.lastIndexOf('.'));
       final List<Future<String?>> futures = [];
@@ -1127,7 +1442,6 @@ class AdbService {
       final found = results.whereType<String>().toList();
       onLog("Scan Complete. Found ${found.length} devices.", 'info');
       return found;
-
     } catch (e) {
       onLog("Network scan failed: $e", 'error');
       return [];
@@ -1136,7 +1450,11 @@ class AdbService {
 
   Future<String?> _checkPort(String ip, int port) async {
     try {
-      final socket = await Socket.connect(ip, port, timeout: const Duration(milliseconds: 300));
+      final socket = await Socket.connect(
+        ip,
+        port,
+        timeout: const Duration(milliseconds: 300),
+      );
       socket.destroy();
       return ip;
     } catch (e) {
@@ -1146,65 +1464,97 @@ class AdbService {
 
   Future<void> takeScreenshot(String serial, String localPath) async {
     final remotePath = '/sdcard/screenshot.png';
-    
+
     if (isMobile) {
-       if (_connectedIp == null) return;
-       try {
-         await Adb.sendSingleCommand('screencap -p $remotePath', ip: _connectedIp!, port: _connectedPort);
-         onLog("Downloading screenshot...", 'info');
-         bool success = await Adb.downloadFile(remotePath, localPath, ip: _connectedIp!, port: _connectedPort);
-         if (success) {
-           await Adb.sendSingleCommand('rm $remotePath', ip: _connectedIp!, port: _connectedPort);
-           onLog("Screenshot saved to $localPath", 'info');
-         } else {
-           onLog("Failed to download screenshot.", 'error');
-         }
-       } catch (e) {
-         onLog("Screenshot exception: $e", 'error');
-       }
-       return;
+      if (_connectedIp == null) return;
+      try {
+        await Adb.sendSingleCommand(
+          'screencap -p $remotePath',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        onLog("Downloading screenshot...", 'info');
+        bool success = await Adb.downloadFile(
+          remotePath,
+          localPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        if (success) {
+          await Adb.sendSingleCommand(
+            'rm $remotePath',
+            ip: _connectedIp!,
+            port: _connectedPort,
+          );
+          onLog("Screenshot saved to $localPath", 'info');
+        } else {
+          onLog("Failed to download screenshot.", 'error');
+        }
+      } catch (e) {
+        onLog("Screenshot exception: $e", 'error');
+      }
+      return;
     }
 
     await runAdbCommand(['-s', serial, 'shell', 'screencap', '-p', remotePath]);
     await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
     await runAdbCommand(['-s', serial, 'shell', 'rm', remotePath]);
   }
-  
+
   Future<Uint8List?> getScreenShotBytes(String serial) async {
     if (isMobile) {
-       if (_connectedIp == null) return null;
-       try {
-         final tempDir = await getTemporaryDirectory();
-         final start = DateTime.now().millisecondsSinceEpoch;
-         final localPath = p.join(tempDir.path, 'temp_screen_$start.png');
-         final remotePath = '/sdcard/temp_screen_$start.png';
-         
-         // 1. Cap
-         await Adb.sendSingleCommand('screencap -p $remotePath', ip: _connectedIp!, port: _connectedPort);
-         // 2. Pull
-         bool success = await Adb.downloadFile(remotePath, localPath, ip: _connectedIp!, port: _connectedPort);
-         // 3. Del (Fire and forget to speed up UI?)
-         // No, we should clean up. But maybe async without await?
-         Adb.sendSingleCommand('rm $remotePath', ip: _connectedIp!, port: _connectedPort);
-         
-         if (success) {
-            final file = File(localPath);
-            final bytes = await file.readAsBytes();
-            await file.delete(); // Clean local
-            return bytes;
-         }
-       } catch (e) {
-         onLog("Mobile Stream error: $e", 'error');
-       }
-       return null;
+      if (_connectedIp == null) return null;
+      try {
+        final tempDir = await getTemporaryDirectory();
+        final start = DateTime.now().millisecondsSinceEpoch;
+        final localPath = p.join(tempDir.path, 'temp_screen_$start.png');
+        final remotePath = '/sdcard/temp_screen_$start.png';
+
+        // 1. Cap
+        await Adb.sendSingleCommand(
+          'screencap -p $remotePath',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        // 2. Pull
+        bool success = await Adb.downloadFile(
+          remotePath,
+          localPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        // 3. Del (Fire and forget to speed up UI?)
+        // No, we should clean up. But maybe async without await?
+        Adb.sendSingleCommand(
+          'rm $remotePath',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+
+        if (success) {
+          final file = File(localPath);
+          final bytes = await file.readAsBytes();
+          await file.delete(); // Clean local
+          return bytes;
+        }
+      } catch (e) {
+        onLog("Mobile Stream error: $e", 'error');
+      }
+      return null;
     }
 
     try {
       // Use exec-out which dumps binary to stdout
       if (_adbPath == null) await init();
-      final result = await Process.run(_adbPath!, ['-s', serial, 'exec-out', 'screencap', '-p'], stdoutEncoding: null);
+      final result = await Process.run(_adbPath!, [
+        '-s',
+        serial,
+        'exec-out',
+        'screencap',
+        '-p',
+      ], stdoutEncoding: null);
       if (result.exitCode == 0) {
-         return result.stdout as Uint8List;
+        return result.stdout as Uint8List;
       }
       return null;
     } catch (e) {
@@ -1214,37 +1564,74 @@ class AdbService {
   }
 
   Future<Process> startRecording(String serial) async {
-     if (isMobile) {
-        throw Exception("Recording not supported on mobile (client mode).");
-     }
+    if (isMobile) {
+      throw Exception("Recording not supported on mobile (client mode).");
+    }
 
-     if (_adbPath == null) await init();
-     // Spawns a process that we have to kill later
-     onLog("Starting screen recording...", 'info');
-     return Process.start(_adbPath!, ['-s', serial, 'shell', 'screenrecord', '/sdcard/screenrecord.mp4']);
+    if (_adbPath == null) await init();
+    // Spawns a process that we have to kill later
+    onLog("Starting screen recording...", 'info');
+    return Process.start(_adbPath!, [
+      '-s',
+      serial,
+      'shell',
+      'screenrecord',
+      '/sdcard/screenrecord.mp4',
+    ]);
   }
 
   Future<void> pullRecording(String serial, String localPath) async {
     final remotePath = '/sdcard/screenrecord.mp4';
 
     if (isMobile) {
-       if (_connectedIp == null) return;
-       try {
-         onLog("Downloading recording...", 'info');
-         bool success = await Adb.downloadFile(remotePath, localPath, ip: _connectedIp!, port: _connectedPort);
-         if (success) {
-           await Adb.sendSingleCommand('rm $remotePath', ip: _connectedIp!, port: _connectedPort);
-           onLog("Recording saved to $localPath", 'info');
-         } else {
-           onLog("Failed to download recording.", 'error');
-         }
-       } catch (e) {
-         onLog("Pull recording exception: $e", 'error');
-       }
-       return;
+      if (_connectedIp == null) return;
+      try {
+        onLog("Downloading recording...", 'info');
+        bool success = await Adb.downloadFile(
+          remotePath,
+          localPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        if (success) {
+          await Adb.sendSingleCommand(
+            'rm $remotePath',
+            ip: _connectedIp!,
+            port: _connectedPort,
+          );
+          onLog("Recording saved to $localPath", 'info');
+        } else {
+          onLog("Failed to download recording.", 'error');
+        }
+      } catch (e) {
+        onLog("Pull recording exception: $e", 'error');
+      }
+      return;
     }
-    
+
     await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
     await runAdbCommand(['-s', serial, 'shell', 'rm', remotePath]);
+  }
+}
+
+String? parsePlatformToolsRevision(String sourceProperties) {
+  for (final line in const LineSplitter().convert(sourceProperties)) {
+    final match = RegExp(r'^Pkg\.Revision\s*=\s*(\S+)\s*$').firstMatch(line);
+    if (match != null) return match.group(1);
+  }
+  return null;
+}
+
+class AdbCommandException implements Exception {
+  final List<String> args;
+  final ProcessResult result;
+
+  AdbCommandException(this.args, this.result);
+
+  @override
+  String toString() {
+    final details = '${result.stderr}${result.stdout}'.trim();
+    return 'ADB command failed (exit ${result.exitCode}): '
+        'adb ${args.join(' ')}${details.isEmpty ? '' : '\n$details'}';
   }
 }

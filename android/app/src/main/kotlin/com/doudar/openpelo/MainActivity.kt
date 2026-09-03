@@ -1,4 +1,4 @@
-package com.example.openpelo
+package com.doudar.openpelo
 
 import io.flutter.embedding.android.FlutterActivity
 

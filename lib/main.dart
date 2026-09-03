@@ -8,7 +8,7 @@ import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
 
@@ -20,18 +20,16 @@ void main() async {
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.normal,
     );
-    
+
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
       await windowManager.focus();
     });
   }
-  
+
   runApp(
     MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppProvider()..init()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => AppProvider()..init())],
       child: const MyApp(),
     ),
   );

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -55,43 +54,43 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
     if (_isProcessing) return; // Prevent overlapping
 
     setState(() {
-       _isProcessing = true;
+      _isProcessing = true;
     });
 
     try {
       final provider = Provider.of<AppProvider>(context, listen: false);
       if (provider.selectedDevice == null) {
-         if (mounted) Navigator.pop(context);
-         return;
+        if (mounted) Navigator.pop(context);
+        return;
       }
-      
+
       final bytes = await provider.getScreenShotBytes();
-      
+
       if (mounted) {
-         if (bytes != null && bytes.isNotEmpty && _imageSize == null) {
-            _imageSize = await _decodeImageSize(bytes);
-            if (!mounted) return;
-         }
-         setState(() {
-            if (bytes != null && bytes.isNotEmpty) {
-               _currentImage = bytes;
-               _visualDragOffset = Offset.zero;
-            }
-            _isLoading = false;
-         });
+        if (bytes != null && bytes.isNotEmpty && _imageSize == null) {
+          _imageSize = await _decodeImageSize(bytes);
+          if (!mounted) return;
+        }
+        setState(() {
+          if (bytes != null && bytes.isNotEmpty) {
+            _currentImage = bytes;
+            _visualDragOffset = Offset.zero;
+          }
+          _isLoading = false;
+        });
       }
     } catch (e) {
-       // ignore
+      // ignore
     } finally {
       if (mounted) {
-         setState(() {
-            _isProcessing = false;
-         });
-         // Schedule next frame
-         // Adaptive delay? 
-         // If it took 100ms, wait 100ms.
-         // If it took 2s (mobile), wait 500ms.
-         _timer = Timer(const Duration(milliseconds: 500), _fetchFrame);
+        setState(() {
+          _isProcessing = false;
+        });
+        // Schedule next frame
+        // Adaptive delay?
+        // If it took 100ms, wait 100ms.
+        // If it took 2s (mobile), wait 500ms.
+        _timer = Timer(const Duration(milliseconds: 500), _fetchFrame);
       }
     }
   }
@@ -109,10 +108,7 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
     }
   }
 
-  Offset? _mapPreviewPoint(
-    Offset localPosition,
-    BoxConstraints constraints,
-  ) {
+  Offset? _mapPreviewPoint(Offset localPosition, BoxConstraints constraints) {
     final imageSize = _imageSize;
     if (imageSize == null || _currentImage == null) return null;
 
@@ -205,9 +201,8 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
       constraints.maxWidth / 2,
       constraints.maxHeight / 2,
     );
-    final maxDrag = Size(constraints.maxWidth, constraints.maxHeight)
-            .shortestSide *
-        0.45;
+    final maxDrag =
+        Size(constraints.maxWidth, constraints.maxHeight).shortestSide * 0.45;
     final clampedDelta = distance > maxDrag
         ? visualDelta / distance * maxDrag
         : visualDelta;
@@ -241,10 +236,7 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
     _scrollPreview(visualDelta, constraints);
   }
 
-  void _handleKeyEvent(
-    KeyEvent event,
-    BoxConstraints constraints,
-  ) {
+  void _handleKeyEvent(KeyEvent event, BoxConstraints constraints) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
 
     const step = 130.0;
@@ -308,7 +300,8 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
           focusNode: _focusNode,
           onKeyEvent: (event) => _handleKeyEvent(event, constraints),
           child: Listener(
-            onPointerSignal: (event) => _handlePointerSignal(event, constraints),
+            onPointerSignal: (event) =>
+                _handlePointerSignal(event, constraints),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapUp: (details) {
@@ -351,8 +344,8 @@ class _ScreenMirrorDialogState extends State<ScreenMirrorDialog> {
                             ),
                           )
                         : (_isLoading
-                            ? const CircularProgressIndicator()
-                            : const Text("No Signal")),
+                              ? const CircularProgressIndicator()
+                              : const Text("No Signal")),
                   ),
                 ),
               ),

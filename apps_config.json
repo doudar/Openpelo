@@ -2,163 +2,167 @@
     "apps": {
         "SmartSpin2k": {
             "url": "https://api.github.com/repos/doudar/SS2kConfigApp/releases/latest",
-            "package_name": "SS2kConfigApp.apk",
+            "asset_name": "SS2kConfigApp.apk",
+            "asset_pattern": "ss2kconfigapp-*.apk",
             "description": "Configuration and ERG workout app for the SmartSpin2k\nSmartSpin2k adds automatic resistance and virtual shifting to spin bikes",
             "abi": "arm64-v8a"
         },
         "Grupetto": {
             "url": "https://api.github.com/repos/doudar/grupetto/releases/latest",
-            "package_name": "grupetto.apk",
+            "asset_name": "grupetto.apk",
+            "asset_pattern": "grupetto-*.apk",
             "description": "Sends bike data via BLE and provides a data metrics overlay",
             "abi": "arm64-v8a"
         },
         "Lawnchair Launcher": {
             "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/v15.0.0-beta2/Lawnchair.15.0.0.Beta.2.apk",
-            "package_name": "Lawnchair.15.0.0.Beta.2.apk",
+            "asset_name": "Lawnchair.15.0.0.Beta.2.apk",
             "description": "Preferred open source launcher for OpenPelo.\nRotate screen in app settings behavior-> screen rotation",
             "abi": "arm64-v8a"
         },
         "Kvaesitso": {
             "url": "https://f-droid.org/repo/de.mm20.launcher2.release_2025042101.apk",
-            "package_name": "de.mm20.launcher2.release_2025042101.apk",
+            "asset_name": "de.mm20.launcher2.release_2025042101.apk",
             "description": "Open Source Launcher.",
             "abi": "arm64-v8a"
         },
         "Nova Launcher": {
             "url": "https://teslacoilapps.com/tesladirect/download.pl?packageName=com.teslacoilsw.launcher",
-            "package_name": "Nova Launcher.apk",
+            "asset_name": "Nova Launcher.apk",
             "description": "Custom launcher for Android. Lawnchair is now preferred for OpenPelo, but Nova still works.",
             "abi": "arm64-v8a"
         },
         "FireFox Focus": {
             "url": "https://ftp.mozilla.org/pub/focus/releases/133.0.3/android/focus-133.0.3-android-arm64-v8a/focus-133.0.3.multi.android-arm64-v8a.apk",
-            "package_name": "focus-133.0.3.multi.android-arm64-v8a.apk",
+            "asset_name": "focus-133.0.3.multi.android-arm64-v8a.apk",
             "description": "Only non-profit-backed browser that is secure, private & fast",
             "abi": "arm64-v8a"
         },
         "Aurora Store": {
             "url": "https://f-droid.org/repo/com.aurora.store_71.apk",
-            "package_name": "com.aurora.store_71.apk",
+            "asset_name": "com.aurora.store_71.apk",
             "description": "Open source Google Play Store client",
             "abi": "arm64-v8a"
         },
         "FDroid": {
             "url": "https://f-droid.org/F-Droid.apk",
-            "package_name": "F-Droid.apk",
+            "asset_name": "F-Droid.apk",
             "description": "Open source app store",
             "abi": "arm64-v8a"
         },
         "Obtanium": {
             "url": "https://github.com/ImranR98/Obtainium/releases/latest",
-            "package_name": "app-arm64-v8a-release.apk",
+            "asset_name": "app-arm64-v8a-release.apk",
             "description": "Setup automatic updates of non-store apps",
             "abi": "arm64-v8a"
         },
         "Moonlight Streaming": {
             "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.1/app-nonRoot-release.apk",
-            "package_name": "app-nonRoot-release.apk",
+            "asset_name": "app-nonRoot-release.apk",
             "description": "Stream training apps (or your Desktop) to your Peloton\nYou'll need to install Sunshine Streaming Server on your PC or Mac",
             "abi": "arm64-v8a"
         },
         "MaterialFiles": {
             "url": "https://github.com/zhanghai/MaterialFiles/releases/latest/download/app-release-universal.apk",
-            "package_name": "app-release-universal.apk",
+            "asset_name": "app-release-universal.apk",
             "description": "An open source file manager, for Android 5.0+.",
             "abi": "arm64-v8a"
         },
         "FDroid Gen 1": {
             "url": "https://f-droid.org/F-Droid.apk",
-            "package_name": "F-Droid.apk",
+            "asset_name": "F-Droid.apk",
             "description": "Open source app store for Gen 1 - Latest stable version",
             "abi": "armeabi-v7a"
         },
         "KISS Launcher": {
             "url": "https://f-droid.org/repo/fr.neamar.kiss_211.apk",
-            "package_name": "fr.neamar.kiss_211.apk",
+            "asset_name": "fr.neamar.kiss_211.apk",
             "description": "Fast, lightweight launcher for Gen 1",
             "abi": "armeabi-v7a"
         },
         "Lawnchair Launcher Gen 1": {
             "url": "https://github.com/LawnchairLauncher/lawnchair/releases/download/1.2.0.1884/Lawnchair-1.2.0.1884.apk",
-            "package_name": "Lawnchair-1.2.0.1884.apk",
+            "asset_name": "Lawnchair-1.2.0.1884.apk",
             "description": "Pixel Launcher features for Gen 1 - Lawnchair v1 (last version supporting older Android)\nRotate screen in app settings behavior-> screen rotation",
             "abi": "armeabi-v7a"
         },
         "Firefox ESR": {
             "url": "https://ftp.mozilla.org/pub/mobile/releases/68.11.0/android-api-16/en-US/fennec-68.11.0.en-US.android-arm.apk",
-            "package_name": "fennec-68.11.0.en-US.android-arm.apk",
+            "asset_name": "fennec-68.11.0.en-US.android-arm.apk",
             "description": "Firefox ESR 68.11 - Last version supporting Android 4.4+ and Gen 1",
             "abi": "armeabi-v7a"
         },
         "Emby": {
             "url": "https://github.com/MediaBrowser/Emby.Releases/raw/master/android/emby-android-google-arm64-v8a-release.apk",
-            "package_name": "emby-android-google-arm64-v8a-release.apk",
+            "asset_name": "emby-android-google-arm64-v8a-release.apk",
             "description": "Emby Client; must have access to you own Emby Server.  https://emby.media/about.html",
             "abi": "arm64-v8a"
         },
         "LibreTube": {
             "url": "https://api.github.com/repos/libre-tube/LibreTube/releases/latest",
-            "package_name": "app-release.apk",
+            "asset_name": "app-release.apk",
             "description": "Privacy-focused YouTube client for Android. \nFor landscape: open LibreTube, go to Settings -> General -> Screen Orientation -> Landscape.",
             "abi": "arm64-v8a"
         },
         "NewPipe": {
             "url": "https://api.github.com/repos/TeamNewPipe/NewPipe/releases/latest",
-            "package_name": "NewPipe_v0.28.8.apk",
+            "asset_name": "NewPipe_v0.28.8.apk",
+            "asset_pattern": "NewPipe_v*.apk",
             "description": "Lightweight YouTube/media client for Android - Privacy focused",
             "abi": "arm64-v8a"
         },
         "LibreTube ARM": {
             "url": "https://api.github.com/repos/libre-tube/LibreTube/releases/latest",
-            "package_name": "app-release.apk",
+            "asset_name": "app-release.apk",
             "description": "Privacy-focused YouTube client for armeabi-v7a devices. \nFor landscape: open LibreTube, go to Settings -> General -> Screen Orientation -> Landscape.",
             "abi": "armeabi-v7a"
         },
         "SkyTubeLegacy": {
             "url": "https://api.github.com/repos/SkyTubeTeam/SkyTubeLegacy/releases/latest",
-            "package_name": "skytubelegacy.apk",
+            "asset_name": "skytubelegacy.apk",
+            "asset_pattern": "SkyTubeLegacy-Legacy-Extra-*.apk",
             "description": "YouTube client for Gen 1 - No Google account required",
             "abi": "armeabi-v7a"
         },
         "NewPipe Legacy": {
             "url": "https://github.com/TeamNewPipe/NewPipe/releases/download/v0.21.16/NewPipe_v0.21.16.apk",
-            "package_name": "NewPipe_v0.21.16.apk",
+            "asset_name": "NewPipe_v0.21.16.apk",
             "description": "Lightweight YouTube/media client for Gen 1 - Privacy focused",
             "abi": "armeabi-v7a"
         },
         "VLC Legacy": {
             "url": "https://get.videolan.org/vlc-android/3.2.12/VLC-Android-3.2.12-armeabi-v7a.apk",
-            "package_name": "VLC-Android-3.2.12-armeabi-v7a.apk",
+            "asset_name": "VLC-Android-3.2.12-armeabi-v7a.apk",
             "description": "VLC media player v3.2.12 for Gen 1 - Plays almost any video/audio format",
             "abi": "armeabi-v7a"
         },
         "Simple File Manager": {
             "url": "https://github.com/SimpleMobileTools/Simple-File-Manager/releases/download/6.16.1/file-manager-fdroid-release.apk",
-            "package_name": "file-manager-fdroid-release.apk",
+            "asset_name": "file-manager-fdroid-release.apk",
             "description": "Easy file manager for Gen 1 - Browse, manage files and folders",
             "abi": "armeabi-v7a"
         },
         "Simple Gallery": {
             "url": "https://github.com/SimpleMobileTools/Simple-Gallery/releases/download/6.28.1/gallery-396-foss-release.apk",
-            "package_name": "gallery-396-foss-release.apk",
+            "asset_name": "gallery-396-foss-release.apk",
             "description": "Photo & video viewer for Gen 1 - Lightweight and easy to use",
             "abi": "armeabi-v7a"
         },
         "Amaze File Manager": {
             "url": "https://github.com/TeamAmaze/AmazeFileManager/releases/download/v3.10/app-fdroid-release.apk",
-            "package_name": "amaze-fdroid-release.apk",
+            "asset_name": "amaze-fdroid-release.apk",
             "description": "Alternative file manager for Gen 1 - Material design with cloud support",
             "abi": "armeabi-v7a"
         },
         "RadioDroid": {
             "url": "https://github.com/segler-alex/RadioDroid/releases/download/0.86/RadioDroid-free-release-0.86-bafa5f3.apk",
-            "package_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
+            "asset_name": "RadioDroid-free-release-0.86-bafa5f3.apk",
             "description": "Internet radio player for Gen 1 - Thousands of stations for your workout",
             "abi": "armeabi-v7a"
         },
         "Steam Link": {
             "url": "https://media.steampowered.com/steamlink/android/latest/steamlink-android.apk",
-            "package_name": "steamlink-android.apk",
+            "asset_name": "steamlink-android.apk",
             "description": "Stream Steam games from your PC to the Peloton over your local network\nRequires Steam on your PC\nAdd training programs to your library using 'add non steam game option'",
             "abi": "arm64-v8a"
         }

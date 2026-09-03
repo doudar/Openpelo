@@ -17,33 +17,34 @@ class AppColors {
 
 class AppTheme {
   static ThemeData get light {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.primary,
-      brightness: Brightness.light,
-    ).copyWith(
-      primary: AppColors.primary,
-      onPrimary: Colors.white,
-      primaryContainer: const Color(0xFFFFD9E1),
-      onPrimaryContainer: const Color(0xFF3F0012),
-      secondary: AppColors.secondary,
-      onSecondary: Colors.white,
-      secondaryContainer: const Color(0xFFCDEFF2),
-      onSecondaryContainer: const Color(0xFF002023),
-      tertiary: AppColors.warning,
-      onTertiary: Colors.white,
-      tertiaryContainer: const Color(0xFFFFE0B8),
-      onTertiaryContainer: const Color(0xFF2A1700),
-      error: AppColors.danger,
-      surface: AppColors.surface,
-      surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: const Color(0xFFFFFBFB),
-      surfaceContainer: const Color(0xFFFCF6F7),
-      surfaceContainerHigh: AppColors.surfaceAlt,
-      surfaceContainerHighest: const Color(0xFFEDE1E4),
-      outline: AppColors.outline,
-      onSurface: AppColors.ink,
-      onSurfaceVariant: const Color(0xFF5C4A4F),
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: AppColors.primary,
+          onPrimary: Colors.white,
+          primaryContainer: const Color(0xFFFFD9E1),
+          onPrimaryContainer: const Color(0xFF3F0012),
+          secondary: AppColors.secondary,
+          onSecondary: Colors.white,
+          secondaryContainer: const Color(0xFFCDEFF2),
+          onSecondaryContainer: const Color(0xFF002023),
+          tertiary: AppColors.warning,
+          onTertiary: Colors.white,
+          tertiaryContainer: const Color(0xFFFFE0B8),
+          onTertiaryContainer: const Color(0xFF2A1700),
+          error: AppColors.danger,
+          surface: AppColors.surface,
+          surfaceContainerLowest: Colors.white,
+          surfaceContainerLow: const Color(0xFFFFFBFB),
+          surfaceContainer: const Color(0xFFFCF6F7),
+          surfaceContainerHigh: AppColors.surfaceAlt,
+          surfaceContainerHighest: const Color(0xFFEDE1E4),
+          outline: AppColors.outline,
+          onSurface: AppColors.ink,
+          onSurfaceVariant: const Color(0xFF5C4A4F),
+        );
 
     return ThemeData(
       useMaterial3: true,

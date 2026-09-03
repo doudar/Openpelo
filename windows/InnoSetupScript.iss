@@ -1,8 +1,12 @@
+#ifndef MyAppVersion
+#define MyAppVersion "1.0.72"
+#endif
+
 [Setup]
 AppId={{DOUDAR-OPENPELO-FLUTTER-ID}}
 AppName=OpenPelo
-AppVersion=1.0.0
-;AppVerName=OpenPelo 1.0.0
+AppVersion={#MyAppVersion}
+AppVerName=OpenPelo {#MyAppVersion}
 AppPublisher=doudar
 DefaultDirName={autopf}\OpenPelo
 DisableProgramGroupPage=yes
