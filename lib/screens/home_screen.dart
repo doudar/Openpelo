@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/app_list_widget.dart';
+import '../widgets/file_manager_dialog.dart';
 import '../widgets/guide_dialog.dart';
 import '../widgets/installed_app_manager_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
@@ -79,6 +80,17 @@ class HomeScreen extends StatelessWidget {
                     builder: (_) => const InstalledAppManagerDialog(),
                   );
                 }
+              } else if (value == 'file_manager') {
+                if (provider.selectedDevice == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("No device selected")),
+                  );
+                } else {
+                  showDialog(
+                    context: context,
+                    builder: (_) => const FileManagerDialog(),
+                  );
+                }
               } else if (value == 'dev_options') {
                 if (provider.selectedDevice == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -119,6 +131,10 @@ class HomeScreen extends StatelessWidget {
               const PopupMenuItem(
                 value: 'installed_apps',
                 child: Text('Installed App Manager'),
+              ),
+              const PopupMenuItem(
+                value: 'file_manager',
+                child: Text('File Manager'),
               ),
               const PopupMenuItem(
                 value: 'uninstall',

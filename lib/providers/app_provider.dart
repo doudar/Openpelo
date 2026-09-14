@@ -12,8 +12,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
 import '../services/config_service.dart';
+import '../services/device_file_parser.dart';
 import '../services/release_asset_selector.dart';
 import '../models/app_model.dart';
+import '../models/device_file_model.dart';
 import '../models/device_model.dart';
 import '../models/installed_app_model.dart';
 import 'package:intl/intl.dart';
@@ -1289,6 +1291,133 @@ class AppProvider with ChangeNotifier {
     }
 
     return {'success': success, 'fail': fail};
+  }
+
+  // ---------------------------------------------------------------------------
+  // File manager
+  // ---------------------------------------------------------------------------
+
+  Future<List<DeviceFileEntry>> listDeviceFiles(String path) async {
+    if (selectedDevice == null) return [];
+    return await _adbService.listDirectory(selectedDevice!.serial, path);
+  }
+
+  /// Lets the user pick local files and pushes them into [remoteDir].
+  /// Returns the number of files uploaded successfully, or null if the picker
+  /// was cancelled.
+  Future<int?> uploadFilesToDevice(
+    String remoteDir, {
+    void Function(int done, int total, String name)? onProgress,
+  }) async {
+    if (selectedDevice == null) return 0;
+    final picked = await FilePicker.pickFiles(
+      dialogTitle: 'Select files to upload',
+    );
+    final paths = picked.map((f) => f.path).whereType<String>().toList();
+    if (paths.isEmpty) return null;
+
+    _setBusy(true);
+    var success = 0;
+    try {
+      for (var i = 0; i < paths.length; i++) {
+        final name = p.basename(paths[i]);
+        onProgress?.call(i, paths.length, name);
+        try {
+          await _adbService.pushFile(
+            selectedDevice!.serial,
+            paths[i],
+            remoteDir,
+          );
+          _onLog("Uploaded $name to $remoteDir", 'info');
+          success++;
+        } catch (e) {
+          _onLog("Failed to upload $name: $e", 'error');
+        }
+      }
+    } finally {
+      _setBusy(false);
+    }
+    return success;
+  }
+
+  /// Pulls [entry] into the save location. Returns the local path on success.
+  Future<String?> downloadDeviceEntry(DeviceFileEntry entry) async {
+    if (selectedDevice == null || saveLocation.isEmpty) return null;
+    _setBusy(true);
+    try {
+      final localPath = _uniqueLocalPath(p.join(saveLocation, entry.name));
+      await _adbService.pullEntry(
+        selectedDevice!.serial,
+        entry.path,
+        localPath,
+      );
+      _onLog("Downloaded ${entry.name} to $localPath", 'info');
+      return localPath;
+    } catch (e) {
+      _onLog("Failed to download ${entry.name}: $e", 'error');
+      return null;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  String _uniqueLocalPath(String path) {
+    if (!File(path).existsSync() && !Directory(path).existsSync()) return path;
+    final dir = p.dirname(path);
+    final base = p.basenameWithoutExtension(path);
+    final ext = p.extension(path);
+    for (var i = 1; ; i++) {
+      final candidate = p.join(dir, '${base}_$i$ext');
+      if (!File(candidate).existsSync() && !Directory(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+  }
+
+  Future<bool> createDeviceFolder(String parentDir, String name) async {
+    if (selectedDevice == null) return false;
+    final path = joinRemotePath(parentDir, name);
+    final ok = await _adbService.makeDirectory(selectedDevice!.serial, path);
+    _onLog(
+      ok ? "Created folder $path" : "Failed to create folder $path",
+      ok ? 'info' : 'error',
+    );
+    return ok;
+  }
+
+  Future<bool> renameDeviceEntry(DeviceFileEntry entry, String newName) async {
+    if (selectedDevice == null) return false;
+    final target = joinRemotePath(parentRemotePath(entry.path), newName);
+    final ok = await _adbService.renameEntry(
+      selectedDevice!.serial,
+      entry.path,
+      target,
+    );
+    _onLog(
+      ok
+          ? "Renamed ${entry.name} to $newName"
+          : "Failed to rename ${entry.name}",
+      ok ? 'info' : 'error',
+    );
+    return ok;
+  }
+
+  Future<bool> deleteDeviceEntry(DeviceFileEntry entry) async {
+    if (selectedDevice == null) return false;
+    _setBusy(true);
+    try {
+      final ok = await _adbService.deleteEntry(
+        selectedDevice!.serial,
+        entry.path,
+      );
+      _onLog(
+        ok ? "Deleted ${entry.path}" : "Failed to delete ${entry.path}",
+        ok ? 'info' : 'error',
+      );
+      return ok;
+    } finally {
+      _setBusy(false);
+    }
   }
 
   void openSaveLocation() {

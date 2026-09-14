@@ -16,6 +16,7 @@ with other Android tablets, phones, and TVs.
 - Curated application catalog with ARM64 and ARMv7 variants
 - Local APK installation
 - Screen mirroring, screenshots, and screen recording
+- Device file manager for browsing, uploading, and downloading files
 - Installed-app, launcher, rotation, and developer-setting management
 - Windows, macOS, and Linux desktop builds
 

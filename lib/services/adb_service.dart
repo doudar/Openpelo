@@ -10,7 +10,9 @@ import 'package:flutter_adb/flutter_adb.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/device_model.dart';
+import '../models/device_file_model.dart';
 import '../models/installed_app_model.dart';
+import 'device_file_parser.dart';
 
 class AdbService {
   static const bundledPlatformToolsRevision = '37.0.1';
@@ -1611,6 +1613,85 @@ class AdbService {
 
     await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
     await runAdbCommand(['-s', serial, 'shell', 'rm', remotePath]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // File manager
+  // ---------------------------------------------------------------------------
+
+  Future<List<DeviceFileEntry>> listDirectory(
+    String serial,
+    String path,
+  ) async {
+    // Trailing slash makes ls follow symlinked directories such as /sdcard.
+    final target = path.endsWith('/') ? path : '$path/';
+    final output = await _runShellCommandText(
+      serial,
+      'ls -la ${quoteShellArg(target)}',
+    );
+    final lower = output.toLowerCase();
+    if (lower.contains('permission denied') ||
+        lower.contains('no such file') ||
+        lower.contains('not a directory')) {
+      throw Exception(output.trim().split('\n').first);
+    }
+    return parseLsOutput(output, path);
+  }
+
+  Future<void> pushFile(
+    String serial,
+    String localPath,
+    String remoteDir,
+  ) async {
+    if (isMobile) {
+      throw Exception("Uploading files is not supported on the mobile client.");
+    }
+    await runAdbCommand(['-s', serial, 'push', localPath, remoteDir]);
+  }
+
+  Future<void> pullEntry(
+    String serial,
+    String remotePath,
+    String localPath,
+  ) async {
+    if (isMobile) {
+      if (_connectedIp == null) throw Exception("No device connected.");
+      final success = await Adb.downloadFile(
+        remotePath,
+        localPath,
+        ip: _connectedIp!,
+        port: _connectedPort,
+      );
+      if (!success) throw Exception("Failed to download $remotePath");
+      return;
+    }
+    await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
+  }
+
+  Future<bool> makeDirectory(String serial, String path) =>
+      _runSilentShellCommand(serial, 'mkdir -p ${quoteShellArg(path)}');
+
+  Future<bool> renameEntry(String serial, String from, String to) =>
+      _runSilentShellCommand(
+        serial,
+        'mv ${quoteShellArg(from)} ${quoteShellArg(to)}',
+      );
+
+  Future<bool> deleteEntry(String serial, String path) =>
+      _runSilentShellCommand(serial, 'rm -rf ${quoteShellArg(path)}');
+
+  /// Runs a shell command that prints nothing on success and returns whether
+  /// it stayed silent.
+  Future<bool> _runSilentShellCommand(String serial, String command) async {
+    try {
+      final output = await _runShellCommandText(serial, command);
+      final ok = output.trim().isEmpty;
+      if (!ok) onLog(output.trim(), 'error');
+      return ok;
+    } catch (e) {
+      onLog("Shell command failed: $e", 'error');
+      return false;
+    }
   }
 }
 
