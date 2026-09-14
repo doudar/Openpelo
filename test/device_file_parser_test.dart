@@ -63,6 +63,144 @@ drwxrwx--x root     sdcard_rw          2016-05-01 12:00 DCIM
     });
   });
 
+  group('sortDeviceFiles', () {
+    List<DeviceFileEntry> sample() => [
+      const DeviceFileEntry(
+        name: 'beta.txt',
+        path: '/sdcard/beta.txt',
+        isDirectory: false,
+        sizeBytes: 300,
+        modified: '2024-03-01 10:00',
+      ),
+      const DeviceFileEntry(
+        name: 'Alpha.txt',
+        path: '/sdcard/Alpha.txt',
+        isDirectory: false,
+        sizeBytes: 1000,
+        modified: '2024-01-01 10:00',
+      ),
+      const DeviceFileEntry(
+        name: 'gamma.txt',
+        path: '/sdcard/gamma.txt',
+        isDirectory: false,
+        sizeBytes: 20,
+        modified: '2024-02-01 10:00',
+      ),
+      const DeviceFileEntry(
+        name: 'Zips',
+        path: '/sdcard/Zips',
+        isDirectory: true,
+        modified: '2024-05-01 10:00',
+      ),
+      const DeviceFileEntry(
+        name: 'Docs',
+        path: '/sdcard/Docs',
+        isDirectory: true,
+        modified: '2023-01-01 10:00',
+      ),
+    ];
+
+    test('name order keeps directories first in both directions', () {
+      final asc = sample();
+      sortDeviceFiles(asc);
+      expect(asc.map((e) => e.name), [
+        'Docs',
+        'Zips',
+        'Alpha.txt',
+        'beta.txt',
+        'gamma.txt',
+      ]);
+
+      final desc = sample();
+      sortDeviceFiles(desc, ascending: false);
+      expect(desc.map((e) => e.name), [
+        'Zips',
+        'Docs',
+        'gamma.txt',
+        'beta.txt',
+        'Alpha.txt',
+      ]);
+    });
+
+    test('modified order uses the timestamp', () {
+      final asc = sample();
+      sortDeviceFiles(asc, sort: DeviceFileSort.modified);
+      expect(asc.map((e) => e.name), [
+        'Docs',
+        'Zips',
+        'Alpha.txt',
+        'gamma.txt',
+        'beta.txt',
+      ]);
+
+      final desc = sample();
+      sortDeviceFiles(desc, sort: DeviceFileSort.modified, ascending: false);
+      expect(desc.map((e) => e.name), [
+        'Zips',
+        'Docs',
+        'beta.txt',
+        'gamma.txt',
+        'Alpha.txt',
+      ]);
+    });
+
+    test(
+      'size descending puts the largest file first, folders still on top',
+      () {
+        final entries = sample();
+        sortDeviceFiles(entries, sort: DeviceFileSort.size, ascending: false);
+        expect(entries.map((e) => e.name), [
+          'Docs',
+          'Zips',
+          'Alpha.txt',
+          'beta.txt',
+          'gamma.txt',
+        ]);
+        expect(entries.take(2).every((e) => e.isDirectory), isTrue);
+      },
+    );
+
+    test('missing size and timestamp fall back to name order', () {
+      final entries = [
+        const DeviceFileEntry(
+          name: 'b.txt',
+          path: '/sdcard/b.txt',
+          isDirectory: false,
+        ),
+        const DeviceFileEntry(
+          name: 'a.txt',
+          path: '/sdcard/a.txt',
+          isDirectory: false,
+        ),
+      ];
+
+      sortDeviceFiles(entries, sort: DeviceFileSort.size);
+      expect(entries.map((e) => e.name), ['a.txt', 'b.txt']);
+
+      sortDeviceFiles(entries, sort: DeviceFileSort.modified);
+      expect(entries.map((e) => e.name), ['a.txt', 'b.txt']);
+    });
+
+    test('unknown timestamps sort last when ascending', () {
+      final entries = [
+        const DeviceFileEntry(
+          name: 'unknown.txt',
+          path: '/sdcard/unknown.txt',
+          isDirectory: false,
+        ),
+        const DeviceFileEntry(
+          name: 'dated.txt',
+          path: '/sdcard/dated.txt',
+          isDirectory: false,
+          modified: '2024-01-01 10:00',
+        ),
+      ];
+
+      sortDeviceFiles(entries, sort: DeviceFileSort.modified);
+      expect(entries.map((e) => e.name), ['dated.txt', 'unknown.txt']);
+    });
+  });
+
   group('path helpers', () {
     test('quoteShellArg escapes embedded single quotes', () {
       expect(quoteShellArg("Rock 'n' Roll"), r"'Rock '\''n'\'' Roll'");

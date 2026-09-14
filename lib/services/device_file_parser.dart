@@ -83,9 +83,46 @@ List<DeviceFileEntry> parseLsOutput(String output, String parentPath) {
     );
   }
 
+  sortDeviceFiles(entries);
+  return entries;
+}
+
+/// Column a device listing can be ordered by.
+enum DeviceFileSort { name, modified, size }
+
+/// Sorts [entries] in place. Directories always stay grouped above files; the
+/// [sort] column and [ascending] direction apply within each group. Entries
+/// missing a size or timestamp fall back to case-insensitive name order.
+void sortDeviceFiles(
+  List<DeviceFileEntry> entries, {
+  DeviceFileSort sort = DeviceFileSort.name,
+  bool ascending = true,
+}) {
+  int byName(DeviceFileEntry a, DeviceFileEntry b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase());
+
   entries.sort((a, b) {
     if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+
+    var result = 0;
+    switch (sort) {
+      case DeviceFileSort.name:
+        result = byName(a, b);
+      case DeviceFileSort.modified:
+        // Timestamps are 'YYYY-MM-DD HH:MM[:SS]', so string order is time
+        // order. Unknown timestamps sort last when ascending.
+        final am = a.modified;
+        final bm = b.modified;
+        if (am == null || bm == null) {
+          result = am == bm ? 0 : (am == null ? 1 : -1);
+        } else {
+          result = am.compareTo(bm);
+        }
+      case DeviceFileSort.size:
+        result = (a.sizeBytes ?? -1).compareTo(b.sizeBytes ?? -1);
+    }
+
+    if (result == 0) return byName(a, b);
+    return ascending ? result : -result;
   });
-  return entries;
 }

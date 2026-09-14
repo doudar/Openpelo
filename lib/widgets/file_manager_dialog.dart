@@ -6,6 +6,17 @@ import '../services/device_file_parser.dart';
 import '../theme/app_theme.dart';
 import 'draggable_dialog.dart';
 
+/// Column geometry shared by the sort header and the rows below it. Both use
+/// the same padding and widths, so the labels sit directly over their values.
+const EdgeInsets _rowPadding = EdgeInsets.symmetric(horizontal: 16);
+const double _leadingColumnWidth = 40; // icon + gap
+const double _sizeColumnWidth = 90;
+const double _columnGap = 20;
+// Fits 'YYYY-MM-DD HH:MM:SS', the longest form the ls parser produces.
+const double _modifiedColumnWidth = 150;
+const double _actionsColumnWidth = 144; // three IconButtons
+const double _arrowSlotWidth = 18;
+
 class FileManagerDialog extends StatefulWidget {
   final String deviceSerial;
 
@@ -29,6 +40,8 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   );
   String _currentPath = _startPath;
   List<DeviceFileEntry> _entries = [];
+  DeviceFileSort _sort = DeviceFileSort.name;
+  bool _ascending = true;
   bool _loading = true;
   bool _transferring = false;
   String? _transferLabel;
@@ -67,6 +80,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
         target,
       );
       if (!mounted) return;
+      sortDeviceFiles(entries, sort: _sort, ascending: _ascending);
       setState(() {
         _entries = entries;
         _currentPath = target;
@@ -95,6 +109,20 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   }
 
   Future<void> _refresh() => _navigateTo(_currentPath);
+
+  /// Re-orders the loaded entries locally; tapping the active column flips the
+  /// direction instead of changing it.
+  void _applySort(DeviceFileSort sort) {
+    setState(() {
+      if (_sort == sort) {
+        _ascending = !_ascending;
+      } else {
+        _sort = sort;
+        _ascending = true;
+      }
+      sortDeviceFiles(_entries, sort: _sort, ascending: _ascending);
+    });
+  }
 
   void _goUp() => _navigateTo(parentRemotePath(_currentPath));
 
@@ -155,7 +183,10 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
       _transferProgress = null;
       _lastDownloadPath = null;
     });
-    final path = await _provider.downloadDeviceEntry(widget.deviceSerial, entry);
+    final path = await _provider.downloadDeviceEntry(
+      widget.deviceSerial,
+      entry,
+    );
     if (!mounted) return;
     setState(() {
       _transferring = false;
@@ -365,7 +396,74 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
               ],
             ),
           ),
+          _buildSortHeader(),
           Expanded(child: _buildFileList()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSortHeader() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    Widget cell(String label, DeviceFileSort sort, {bool alignEnd = false}) {
+      final active = _sort == sort;
+      final text = Flexible(
+        child: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: active
+                ? colorScheme.onSurface
+                : colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+      final arrow = SizedBox(
+        width: _arrowSlotWidth,
+        child: active
+            ? Icon(
+                _ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                size: 14,
+                color: colorScheme.onSurface,
+              )
+            : null,
+      );
+
+      return InkWell(
+        onTap: _busy ? null : () => _applySort(sort),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: alignEnd
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            // The arrow sits on the outside of the column so the label stays
+            // flush with the values it labels.
+            children: alignEnd ? [arrow, text] : [text, arrow],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      color: colorScheme.surfaceContainerHighest,
+      padding: _rowPadding,
+      child: Row(
+        children: [
+          const SizedBox(width: _leadingColumnWidth),
+          Expanded(child: cell("Name", DeviceFileSort.name)),
+          SizedBox(
+            width: _sizeColumnWidth,
+            child: cell("Size", DeviceFileSort.size, alignEnd: true),
+          ),
+          const SizedBox(width: _columnGap),
+          SizedBox(
+            width: _modifiedColumnWidth,
+            child: cell("Modified", DeviceFileSort.modified),
+          ),
+          const SizedBox(width: _actionsColumnWidth),
         ],
       ),
     );
@@ -476,50 +574,95 @@ class _DeviceFileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final details = <String>[
-      if (entry.sizeBytes != null) formatFileSize(entry.sizeBytes!),
-      if (entry.modified != null) entry.modified!,
-    ];
+    final detailStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant);
 
-    return ListTile(
-      enabled: enabled,
+    final disabledColor = colorScheme.onSurface.withValues(alpha: 0.38);
+
+    // Laid out as an explicit Row rather than a ListTile so the columns line
+    // up with _buildSortHeader by construction instead of depending on
+    // ListTile's internal leading/gap geometry.
+    return InkWell(
       onTap: enabled ? onOpen : null,
-      leading: Icon(
-        entry.isDirectory
-            ? Icons.folder
-            : entry.isSymlink
-            ? Icons.link
-            : Icons.insert_drive_file_outlined,
-        color: entry.isDirectory ? colorScheme.secondary : null,
-      ),
-      title: Text(entry.name, overflow: TextOverflow.ellipsis),
-      subtitle: details.isEmpty
-          ? null
-          : Text(
-              details.join('  ·  '),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
-            ),
-      trailing: Wrap(
-        spacing: 4,
-        children: [
-          IconButton(
-            tooltip: "Download to save location",
-            onPressed: enabled ? onDownload : null,
-            icon: const Icon(Icons.download),
+      child: Padding(
+        padding: _rowPadding,
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              SizedBox(
+                width: _leadingColumnWidth,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Icon(
+                    entry.isDirectory
+                        ? Icons.folder
+                        : entry.isSymlink
+                        ? Icons.link
+                        : Icons.insert_drive_file_outlined,
+                    color: !enabled
+                        ? disabledColor
+                        : entry.isDirectory
+                        ? colorScheme.secondary
+                        : null,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  entry.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: enabled ? null : TextStyle(color: disabledColor),
+                ),
+              ),
+              SizedBox(
+                width: _sizeColumnWidth,
+                child: Text(
+                  entry.sizeBytes == null
+                      ? ''
+                      : formatFileSize(entry.sizeBytes!),
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  style: detailStyle,
+                ),
+              ),
+              const SizedBox(width: _columnGap),
+              SizedBox(
+                width: _modifiedColumnWidth,
+                child: Text(
+                  entry.modified ?? '',
+                  overflow: TextOverflow.ellipsis,
+                  style: detailStyle,
+                ),
+              ),
+              SizedBox(
+                width: _actionsColumnWidth,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      tooltip: "Download to save location",
+                      onPressed: enabled ? onDownload : null,
+                      icon: const Icon(Icons.download),
+                    ),
+                    IconButton(
+                      tooltip: "Rename",
+                      onPressed: enabled ? onRename : null,
+                      icon: const Icon(Icons.drive_file_rename_outline),
+                    ),
+                    IconButton(
+                      tooltip: "Delete",
+                      onPressed: enabled ? onDelete : null,
+                      color: AppColors.danger,
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: "Rename",
-            onPressed: enabled ? onRename : null,
-            icon: const Icon(Icons.drive_file_rename_outline),
-          ),
-          IconButton(
-            tooltip: "Delete",
-            onPressed: enabled ? onDelete : null,
-            color: AppColors.danger,
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
+        ),
       ),
     );
   }
