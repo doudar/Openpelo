@@ -15,6 +15,25 @@ String parentRemotePath(String path) {
   return _posix.dirname(normalized);
 }
 
+/// Builds a local destination for a remote entry without allowing the remote
+/// name to introduce host path separators or escape [root].
+String safeLocalEntryPath(String root, String name) {
+  if (name.isEmpty ||
+      name == '.' ||
+      name == '..' ||
+      name.contains('/') ||
+      name.contains(r'\')) {
+    throw FormatException('Unsupported device filename: $name');
+  }
+
+  final normalizedRoot = p.normalize(p.absolute(root));
+  final candidate = p.normalize(p.join(normalizedRoot, name));
+  if (!p.isWithin(normalizedRoot, candidate)) {
+    throw FormatException('Device filename escapes the save location: $name');
+  }
+  return candidate;
+}
+
 final _lsLine = RegExp(
   r'^([\-dlcbps])[rwxsStT\-]{9}[+.@]?\s+(.*?)\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)\s(.*)$',
 );

@@ -7,7 +7,9 @@ import '../theme/app_theme.dart';
 import 'draggable_dialog.dart';
 
 class FileManagerDialog extends StatefulWidget {
-  const FileManagerDialog({super.key});
+  final String deviceSerial;
+
+  const FileManagerDialog({super.key, required this.deviceSerial});
 
   @override
   State<FileManagerDialog> createState() => _FileManagerDialogState();
@@ -51,13 +53,19 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
 
   AppProvider get _provider => Provider.of<AppProvider>(context, listen: false);
 
-  bool get _busy => _loading || _transferring;
+  bool get _deviceSessionActive =>
+      _provider.selectedDevice?.serial == widget.deviceSerial;
+
+  bool get _busy => _loading || _transferring || !_deviceSessionActive;
 
   Future<void> _navigateTo(String path, {bool fallbackToRoot = false}) async {
     final target = path.trim().isEmpty ? '/' : joinRemotePath('/', path.trim());
     setState(() => _loading = true);
     try {
-      final entries = await _provider.listDeviceFiles(target);
+      final entries = await _provider.listDeviceFiles(
+        widget.deviceSerial,
+        target,
+      );
       if (!mounted) return;
       setState(() {
         _entries = entries;
@@ -106,6 +114,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
       _lastDownloadPath = null;
     });
     final count = await _provider.uploadFilesToDevice(
+      widget.deviceSerial,
       _currentPath,
       onProgress: (done, total, name) {
         if (!mounted) return;
@@ -146,7 +155,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
       _transferProgress = null;
       _lastDownloadPath = null;
     });
-    final path = await _provider.downloadDeviceEntry(entry);
+    final path = await _provider.downloadDeviceEntry(widget.deviceSerial, entry);
     if (!mounted) return;
     setState(() {
       _transferring = false;
@@ -216,7 +225,11 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   Future<void> _createFolder() async {
     final name = await _promptForName("New Folder", "Create");
     if (name == null || !mounted) return;
-    final ok = await _provider.createDeviceFolder(_currentPath, name);
+    final ok = await _provider.createDeviceFolder(
+      widget.deviceSerial,
+      _currentPath,
+      name,
+    );
     _setStatus(
       ok ? "Created folder $name" : "Could not create folder $name",
       isError: !ok,
@@ -227,7 +240,11 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   Future<void> _rename(DeviceFileEntry entry) async {
     final name = await _promptForName("Rename", "Rename", initial: entry.name);
     if (name == null || name == entry.name || !mounted) return;
-    final ok = await _provider.renameDeviceEntry(entry, name);
+    final ok = await _provider.renameDeviceEntry(
+      widget.deviceSerial,
+      entry,
+      name,
+    );
     _setStatus(
       ok ? "Renamed ${entry.name} to $name" : "Could not rename ${entry.name}",
       isError: !ok,
@@ -262,7 +279,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
     );
     if (confirmed != true || !mounted) return;
 
-    final ok = await _provider.deleteDeviceEntry(entry);
+    final ok = await _provider.deleteDeviceEntry(widget.deviceSerial, entry);
     _setStatus(
       ok ? "Deleted ${entry.name}" : "Could not delete ${entry.name}",
       isError: !ok,
@@ -272,6 +289,9 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
 
   @override
   Widget build(BuildContext context) {
+    context.select<AppProvider, String?>(
+      (provider) => provider.selectedDevice?.serial,
+    );
     return DraggableDialog(
       width: 900,
       height: 680,
@@ -381,9 +401,10 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   Widget _buildStatusBar() {
     final colorScheme = Theme.of(context).colorScheme;
     final textStyle = Theme.of(context).textTheme.bodySmall;
-    final defaultText =
-        "${_entries.length} item${_entries.length == 1 ? '' : 's'} in "
-        "$_currentPath";
+    final defaultText = !_deviceSessionActive
+        ? "The selected device changed. Close and reopen File Manager."
+        : "${_entries.length} item${_entries.length == 1 ? '' : 's'} in "
+              "$_currentPath";
 
     return Column(
       mainAxisSize: MainAxisSize.min,

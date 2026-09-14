@@ -81,14 +81,17 @@ class HomeScreen extends StatelessWidget {
                   );
                 }
               } else if (value == 'file_manager') {
-                if (provider.selectedDevice == null) {
+                final deviceSerial = provider.selectedDevice?.serial;
+                if (deviceSerial == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text("No device selected")),
                   );
                 } else {
                   showDialog(
                     context: context,
-                    builder: (_) => const FileManagerDialog(),
+                    builder: (_) => FileManagerDialog(
+                      deviceSerial: deviceSerial,
+                    ),
                   );
                 }
               } else if (value == 'dev_options') {

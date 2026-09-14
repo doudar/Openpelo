@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openpelo/models/device_file_model.dart';
 import 'package:openpelo/services/device_file_parser.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('parseLsOutput', () {
@@ -77,6 +78,21 @@ drwxrwx--x root     sdcard_rw          2016-05-01 12:00 DCIM
     test('joinRemotePath normalizes separators', () {
       expect(joinRemotePath('/sdcard/', 'Movies'), '/sdcard/Movies');
       expect(joinRemotePath('/', 'sdcard'), '/sdcard');
+    });
+
+    test('safeLocalEntryPath rejects host path traversal', () {
+      expect(
+        () => safeLocalEntryPath('downloads', r'..\outside.txt'),
+        throwsFormatException,
+      );
+      expect(
+        () => safeLocalEntryPath('downloads', '../outside.txt'),
+        throwsFormatException,
+      );
+      expect(
+        p.basename(safeLocalEntryPath('downloads', 'inside.txt')),
+        'inside.txt',
+      );
     });
   });
 

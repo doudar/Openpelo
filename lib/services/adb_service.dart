@@ -1646,7 +1646,32 @@ class AdbService {
     if (isMobile) {
       throw Exception("Uploading files is not supported on the mobile client.");
     }
-    await runAdbCommand(['-s', serial, 'push', localPath, remoteDir]);
+    final remotePath = joinRemotePath(remoteDir, p.basename(localPath));
+    if (await _remoteEntryExists(serial, remotePath)) {
+      throw Exception('A file named ${p.basename(localPath)} already exists.');
+    }
+
+    final temporaryPath = await _unusedRemoteTransferPath(serial, remoteDir);
+    try {
+      await runAdbCommand(['-s', serial, 'push', localPath, temporaryPath]);
+      final renameResult = await _renameEntryNoClobber(
+        serial,
+        temporaryPath,
+        remotePath,
+      );
+      if (renameResult == _RenameEntryResult.destinationExists) {
+        throw Exception('A file named ${p.basename(localPath)} already exists.');
+      }
+      if (renameResult == _RenameEntryResult.failed) {
+        throw Exception('Could not finish uploading ${p.basename(localPath)}.');
+      }
+    } catch (_) {
+      await _runSilentShellCommand(
+        serial,
+        'rm -rf ${quoteShellArg(temporaryPath)}',
+      );
+      rethrow;
+    }
   }
 
   Future<void> pullEntry(
@@ -1654,28 +1679,64 @@ class AdbService {
     String remotePath,
     String localPath,
   ) async {
-    if (isMobile) {
-      if (_connectedIp == null) throw Exception("No device connected.");
-      final success = await Adb.downloadFile(
-        remotePath,
-        localPath,
-        ip: _connectedIp!,
-        port: _connectedPort,
-      );
-      if (!success) throw Exception("Failed to download $remotePath");
-      return;
+    final temporaryPath = await _unusedLocalTransferPath(localPath);
+    try {
+      if (isMobile) {
+        if (_connectedIp == null) throw Exception("No device connected.");
+        final success = await Adb.downloadFile(
+          remotePath,
+          temporaryPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        if (!success) throw Exception("Failed to download $remotePath");
+      } else {
+        await runAdbCommand(['-s', serial, 'pull', remotePath, temporaryPath]);
+      }
+      await _moveLocalEntry(temporaryPath, localPath);
+    } catch (_) {
+      await _deleteLocalEntry(temporaryPath);
+      rethrow;
     }
-    await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
   }
 
   Future<bool> makeDirectory(String serial, String path) =>
       _runSilentShellCommand(serial, 'mkdir -p ${quoteShellArg(path)}');
 
-  Future<bool> renameEntry(String serial, String from, String to) =>
-      _runSilentShellCommand(
+  Future<bool> renameEntry(String serial, String from, String to) async {
+    final result = await _renameEntryNoClobber(serial, from, to);
+    if (result == _RenameEntryResult.destinationExists) {
+      onLog('Destination already exists: $to', 'error');
+    }
+    return result == _RenameEntryResult.renamed;
+  }
+
+  Future<_RenameEntryResult> _renameEntryNoClobber(
+    String serial,
+    String from,
+    String to,
+  ) async {
+    const destinationExistsMarker = '__OPENPELO_DESTINATION_EXISTS__';
+    final quotedTo = quoteShellArg(to);
+    try {
+      final output = await _runShellCommandText(
         serial,
-        'mv ${quoteShellArg(from)} ${quoteShellArg(to)}',
+        'if [ -e $quotedTo ] || [ -L $quotedTo ]; then '
+        'printf $destinationExistsMarker; '
+        'else mv ${quoteShellArg(from)} $quotedTo; fi',
       );
+      final text = output.trim();
+      if (text == destinationExistsMarker) {
+        return _RenameEntryResult.destinationExists;
+      }
+      if (text.isEmpty) return _RenameEntryResult.renamed;
+      onLog(text, 'error');
+      return _RenameEntryResult.failed;
+    } catch (e) {
+      onLog('Shell command failed: $e', 'error');
+      return _RenameEntryResult.failed;
+    }
+  }
 
   Future<bool> deleteEntry(String serial, String path) =>
       _runSilentShellCommand(serial, 'rm -rf ${quoteShellArg(path)}');
@@ -1693,7 +1754,64 @@ class AdbService {
       return false;
     }
   }
+
+  Future<bool> _remoteEntryExists(String serial, String path) async {
+    final quotedPath = quoteShellArg(path);
+    final output = await _runShellCommandText(
+      serial,
+      'if [ -e $quotedPath ] || [ -L $quotedPath ]; then printf 1; '
+      'else printf 0; fi',
+    );
+    return output.trim() == '1';
+  }
+
+  Future<String> _unusedRemoteTransferPath(
+    String serial,
+    String remoteDir,
+  ) async {
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    for (var suffix = 0; ; suffix++) {
+      final name = '.openpelo-upload-$stamp${suffix == 0 ? '' : '-$suffix'}';
+      final candidate = joinRemotePath(remoteDir, name);
+      if (!await _remoteEntryExists(serial, candidate)) return candidate;
+    }
+  }
+
+  Future<String> _unusedLocalTransferPath(String localPath) async {
+    final directory = p.dirname(localPath);
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    for (var suffix = 0; ; suffix++) {
+      final name = '.openpelo-download-$stamp${suffix == 0 ? '' : '-$suffix'}';
+      final candidate = p.join(directory, name);
+      if (!await File(candidate).exists() &&
+          !await Directory(candidate).exists()) {
+        return candidate;
+      }
+    }
+  }
+
+  Future<void> _moveLocalEntry(String from, String to) async {
+    if (await File(from).exists()) {
+      await File(from).rename(to);
+      return;
+    }
+    if (await Directory(from).exists()) {
+      await Directory(from).rename(to);
+      return;
+    }
+    throw Exception('Downloaded entry was not created.');
+  }
+
+  Future<void> _deleteLocalEntry(String path) async {
+    if (await File(path).exists()) {
+      await File(path).delete();
+    } else if (await Directory(path).exists()) {
+      await Directory(path).delete(recursive: true);
+    }
+  }
 }
+
+enum _RenameEntryResult { renamed, destinationExists, failed }
 
 String? parsePlatformToolsRevision(String sourceProperties) {
   for (final line in const LineSplitter().convert(sourceProperties)) {
