@@ -14,7 +14,7 @@ const double _sizeColumnWidth = 90;
 const double _columnGap = 20;
 // Fits 'YYYY-MM-DD HH:MM:SS', the longest form the ls parser produces.
 const double _modifiedColumnWidth = 150;
-const double _actionsColumnWidth = 144; // three IconButtons
+const double _actionsColumnWidth = 192; // three IconButtons + overflow menu
 const double _arrowSlotWidth = 18;
 
 class FileManagerDialog extends StatefulWidget {
@@ -49,6 +49,9 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
   String? _statusMessage;
   bool _statusIsError = false;
   String? _lastDownloadPath;
+  // Folder the last download actually landed in, which may be a one-off
+  // override rather than the save location.
+  String? _lastDownloadDir;
 
   @override
   void initState() {
@@ -140,6 +143,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
       _transferLabel = "Waiting for file selection...";
       _transferProgress = null;
       _lastDownloadPath = null;
+      _lastDownloadDir = null;
     });
     final count = await _provider.uploadFilesToDevice(
       widget.deviceSerial,
@@ -169,29 +173,37 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
     await _refresh();
   }
 
-  Future<void> _download(DeviceFileEntry entry) async {
-    if (_provider.saveLocation.isEmpty) {
-      _setStatus(
-        "Choose a save location on the main screen first.",
-        isError: true,
-      );
-      return;
+  /// Downloads [entry] to the save location, or to a folder the user picks when
+  /// [chooseDestination] is set or "Ask each time" is on.
+  Future<void> _download(
+    DeviceFileEntry entry, {
+    bool chooseDestination = false,
+  }) async {
+    String? destination;
+    if (chooseDestination || _provider.askEachDownload) {
+      destination = await _provider.pickDownloadDirectory();
+      // Cancelling the picker is not an error; leave the status bar alone.
+      if (destination == null || !mounted) return;
     }
+    final target = destination ?? _provider.saveLocation;
     setState(() {
       _transferring = true;
       _transferLabel = "Downloading ${entry.name}...";
       _transferProgress = null;
       _lastDownloadPath = null;
+      _lastDownloadDir = null;
     });
     final path = await _provider.downloadDeviceEntry(
       widget.deviceSerial,
       entry,
+      destination: destination,
     );
     if (!mounted) return;
     setState(() {
       _transferring = false;
       _transferLabel = null;
       _lastDownloadPath = path;
+      _lastDownloadDir = path == null ? null : target;
     });
     _setStatus(
       path == null ? "Could not download ${entry.name}" : "Saved to $path",
@@ -398,6 +410,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
           ),
           _buildSortHeader(),
           Expanded(child: _buildFileList()),
+          _buildDestinationBar(),
         ],
       ),
     );
@@ -489,8 +502,83 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
               ? () => _navigateTo(entry.path)
               : null,
           onDownload: () => _download(entry),
+          onDownloadTo: () => _download(entry, chooseDestination: true),
           onRename: () => _rename(entry),
           onDelete: () => _confirmDelete(entry),
+        );
+      },
+    );
+  }
+
+  /// States the download destination *before* a transfer happens, and lets the
+  /// user retarget it without leaving the dialog.
+  Widget _buildDestinationBar() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Consumer<AppProvider>(
+      builder: (context, provider, _) {
+        final destination = provider.saveLocation;
+        // With "Ask each time" on, this folder is only the picker's starting
+        // point, so it is labelled and styled as a default rather than as the
+        // place the next download will land.
+        final asking = provider.askEachDownload;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHigh,
+            border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+          ),
+          child: Row(
+            children: [
+              Text(asking ? "Default folder:" : "Save to:"),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Tooltip(
+                  message: destination,
+                  child: Text(
+                    destination,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: asking ? FontWeight.normal : FontWeight.w600,
+                      color: asking ? colorScheme.onSurfaceVariant : null,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _transferring ? null : provider.chooseSaveLocation,
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text("Change"),
+              ),
+              IconButton(
+                tooltip: "Open save folder",
+                onPressed: destination.isEmpty
+                    ? null
+                    : () => provider.openSaveLocation(),
+                icon: const Icon(Icons.folder_open, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: "Pick a folder for every download",
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: provider.askEachDownload,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: _transferring
+                          ? null
+                          : (value) =>
+                                provider.setAskEachDownload(value ?? false),
+                    ),
+                    const Text("Ask each time"),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -531,8 +619,9 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
               ),
               if (_lastDownloadPath != null && _statusMessage != null)
                 IconButton(
-                  tooltip: "Open save folder",
-                  onPressed: _provider.openSaveLocation,
+                  tooltip: "Open containing folder",
+                  onPressed: () =>
+                      _provider.openSaveLocation(path: _lastDownloadDir),
                   icon: const Icon(Icons.folder, size: 18),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -542,6 +631,7 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
                   onPressed: () => setState(() {
                     _statusMessage = null;
                     _lastDownloadPath = null;
+                    _lastDownloadDir = null;
                   }),
                   icon: const Icon(Icons.close, size: 18),
                   visualDensity: VisualDensity.compact,
@@ -559,6 +649,7 @@ class _DeviceFileTile extends StatelessWidget {
   final bool enabled;
   final VoidCallback? onOpen;
   final VoidCallback onDownload;
+  final VoidCallback onDownloadTo;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -567,9 +658,67 @@ class _DeviceFileTile extends StatelessWidget {
     required this.enabled,
     required this.onOpen,
     required this.onDownload,
+    required this.onDownloadTo,
     required this.onRename,
     required this.onDelete,
   });
+
+  List<PopupMenuEntry<VoidCallback>> _menuItems() => [
+    PopupMenuItem(
+      value: onDownload,
+      child: const ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.download),
+        title: Text("Download"),
+      ),
+    ),
+    PopupMenuItem(
+      value: onDownloadTo,
+      child: const ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.drive_folder_upload_outlined),
+        title: Text("Download to..."),
+      ),
+    ),
+    const PopupMenuDivider(),
+    PopupMenuItem(
+      value: onRename,
+      child: const ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.drive_file_rename_outline),
+        title: Text("Rename"),
+      ),
+    ),
+    PopupMenuItem(
+      value: onDelete,
+      child: const ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.delete_outline, color: AppColors.danger),
+        title: Text("Delete"),
+      ),
+    ),
+  ];
+
+  /// Explorer-style right-click menu, mirroring the overflow button so the
+  /// per-file destination override is reachable either way.
+  Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final selected = await showMenu<VoidCallback>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & Size.zero,
+        Offset.zero & overlay.size,
+      ),
+      items: _menuItems(),
+    );
+    selected?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -585,6 +734,9 @@ class _DeviceFileTile extends StatelessWidget {
     // ListTile's internal leading/gap geometry.
     return InkWell(
       onTap: enabled ? onOpen : null,
+      onSecondaryTapUp: enabled
+          ? (details) => _showContextMenu(context, details.globalPosition)
+          : null,
       child: Padding(
         padding: _rowPadding,
         child: SizedBox(
@@ -642,7 +794,7 @@ class _DeviceFileTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
-                      tooltip: "Download to save location",
+                      tooltip: "Download",
                       onPressed: enabled ? onDownload : null,
                       icon: const Icon(Icons.download),
                     ),
@@ -656,6 +808,13 @@ class _DeviceFileTile extends StatelessWidget {
                       onPressed: enabled ? onDelete : null,
                       color: AppColors.danger,
                       icon: const Icon(Icons.delete_outline),
+                    ),
+                    PopupMenuButton<VoidCallback>(
+                      tooltip: "More actions",
+                      enabled: enabled,
+                      itemBuilder: (_) => _menuItems(),
+                      onSelected: (action) => action(),
+                      icon: const Icon(Icons.more_vert),
                     ),
                   ],
                 ),

@@ -437,12 +437,12 @@ class HomeScreen extends StatelessWidget {
 
                   const _SectionHeader(
                     icon: Icons.perm_media_outlined,
-                    label: "Media Settings",
+                    label: "Downloads & Media",
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Text("Save Location: "),
+                      const Text("Save folder: "),
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -454,15 +454,18 @@ class HomeScreen extends StatelessWidget {
                             border: Border.all(color: colorScheme.outline),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
-                            provider.saveLocation,
-                            overflow: TextOverflow.ellipsis,
+                          child: Tooltip(
+                            message: provider.saveLocation,
+                            child: Text(
+                              provider.saveLocation,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.folder),
-                        onPressed: provider.openSaveLocation,
+                        onPressed: () => provider.openSaveLocation(),
                         tooltip: "Open Folder",
                       ),
                       IconButton(

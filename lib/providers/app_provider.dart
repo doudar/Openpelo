@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
 import '../services/config_service.dart';
@@ -57,6 +58,7 @@ class AppProvider with ChangeNotifier {
   Process? _recordingProcess;
   bool isRecording = false;
   String? _saveLocation;
+  bool _askEachDownload = false;
   bool isCheckingForUpdate = false;
   String? currentAppVersion;
   String? latestAppVersion;
@@ -214,17 +216,57 @@ class AppProvider with ChangeNotifier {
     return 0;
   }
 
+  static const _kSaveLocation = 'save_location';
+  static const _kAskEachDownload = 'ask_save_location_each_time';
+
+  /// Restores the save location chosen on a previous run, falling back to the
+  /// default folder when nothing is stored or the stored folder is gone.
   void _loadSaveLocation() async {
-    final docDir = await getApplicationDocumentsDirectory();
-    _saveLocation = p.join(docDir.path, "OpenPelo");
-    final dir = Directory(_saveLocation!);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    final prefs = await SharedPreferences.getInstance();
+    _askEachDownload = prefs.getBool(_kAskEachDownload) ?? false;
+
+    final stored = prefs.getString(_kSaveLocation);
+    if (stored != null && stored.isNotEmpty) {
+      if (await Directory(stored).exists()) {
+        _saveLocation = stored;
+        notifyListeners();
+        return;
+      }
+      // Keep the preference: the folder may live on a drive or share that is
+      // simply not mounted right now, and should come back on a later launch.
+      _onLog(
+        "Save folder $stored is unavailable; using the default for now.",
+        'error',
+      );
     }
+
+    _saveLocation = await _defaultSaveLocation();
     notifyListeners();
   }
 
+  Future<String> _defaultSaveLocation() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    final path = p.join(docDir.path, "OpenPelo");
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
+  }
+
   String get saveLocation => _saveLocation ?? "";
+
+  /// When true, every file-manager download asks for a destination instead of
+  /// using [saveLocation].
+  bool get askEachDownload => _askEachDownload;
+
+  Future<void> setAskEachDownload(bool value) async {
+    if (_askEachDownload == value) return;
+    _askEachDownload = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAskEachDownload, value);
+  }
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
@@ -848,12 +890,27 @@ class AppProvider with ChangeNotifier {
     return await _adbService.pressKey(selectedDevice!.serial, 187);
   }
 
-  Future<void> chooseSaveLocation() async {
-    String? selectedDirectory = await FilePicker.getDirectoryPath();
-    if (selectedDirectory != null) {
-      _saveLocation = selectedDirectory;
-      notifyListeners();
+  /// Prompts for a folder, seeded with the current save location. Returns null
+  /// when the user cancels. Does not change the saved default.
+  Future<String?> pickDownloadDirectory() async {
+    final selected = await FilePicker.getDirectoryPath(
+      initialDirectory: saveLocation.isEmpty ? null : saveLocation,
+    );
+    if (selected == null) return null;
+    final dir = Directory(selected);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
     }
+    return selected;
+  }
+
+  Future<void> chooseSaveLocation() async {
+    final selected = await pickDownloadDirectory();
+    if (selected == null) return;
+    _saveLocation = selected;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSaveLocation, selected);
   }
 
   Future<List<Map<String, String>>> loadGuide(String filename) async {
@@ -1338,16 +1395,19 @@ class AppProvider with ChangeNotifier {
     return success;
   }
 
-  /// Pulls [entry] into the save location. Returns the local path on success.
+  /// Pulls [entry] into [destination], or the save location when omitted.
+  /// Returns the local path on success.
   Future<String?> downloadDeviceEntry(
     String deviceSerial,
-    DeviceFileEntry entry,
-  ) async {
-    if (saveLocation.isEmpty) return null;
+    DeviceFileEntry entry, {
+    String? destination,
+  }) async {
+    final root = destination ?? saveLocation;
+    if (root.isEmpty) return null;
     _setBusy(true);
     try {
       final localPath = _uniqueLocalPath(
-        safeLocalEntryPath(saveLocation, entry.name),
+        safeLocalEntryPath(root, entry.name),
       );
       await _adbService.pullEntry(deviceSerial, entry.path, localPath);
       _onLog("Downloaded ${entry.name} to $localPath", 'info');
@@ -1420,12 +1480,16 @@ class AppProvider with ChangeNotifier {
     }
   }
 
-  void openSaveLocation() {
-    if (_saveLocation != null) {
-      // use url_launcher or process to open folder
-      // url_launcher 'file:$path' works on some OS
-      Process.run(Platform.isWindows ? 'explorer' : 'open', [_saveLocation!]);
-    }
+  /// Reveals [path] in the host file browser, defaulting to the save location.
+  void openSaveLocation({String? path}) {
+    final target = path ?? _saveLocation;
+    if (target == null || target.isEmpty) return;
+    final opener = Platform.isWindows
+        ? 'explorer'
+        : Platform.isMacOS
+        ? 'open'
+        : 'xdg-open';
+    Process.run(opener, [target]);
   }
 
   @override
