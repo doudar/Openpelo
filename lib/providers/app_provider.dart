@@ -1406,9 +1406,7 @@ class AppProvider with ChangeNotifier {
     if (root.isEmpty) return null;
     _setBusy(true);
     try {
-      final localPath = _uniqueLocalPath(
-        safeLocalEntryPath(root, entry.name),
-      );
+      final localPath = _uniqueLocalPath(safeLocalEntryPath(root, entry.name));
       await _adbService.pullEntry(deviceSerial, entry.path, localPath);
       _onLog("Downloaded ${entry.name} to $localPath", 'info');
       return localPath;

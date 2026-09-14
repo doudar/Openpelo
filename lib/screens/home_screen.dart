@@ -89,9 +89,8 @@ class HomeScreen extends StatelessWidget {
                 } else {
                   showDialog(
                     context: context,
-                    builder: (_) => FileManagerDialog(
-                      deviceSerial: deviceSerial,
-                    ),
+                    builder: (_) =>
+                        FileManagerDialog(deviceSerial: deviceSerial),
                   );
                 }
               } else if (value == 'dev_options') {

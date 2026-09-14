@@ -1660,7 +1660,9 @@ class AdbService {
         remotePath,
       );
       if (renameResult == _RenameEntryResult.destinationExists) {
-        throw Exception('A file named ${p.basename(localPath)} already exists.');
+        throw Exception(
+          'A file named ${p.basename(localPath)} already exists.',
+        );
       }
       if (renameResult == _RenameEntryResult.failed) {
         throw Exception('Could not finish uploading ${p.basename(localPath)}.');
