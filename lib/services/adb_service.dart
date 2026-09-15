@@ -24,7 +24,8 @@ class AdbService {
   String? _connectedIp;
   int _connectedPort = 5555;
 
-  AdbService({required this.onLog});
+  AdbService({required this.onLog, String? executablePath})
+    : _adbPath = executablePath;
 
   bool get isMobile => Platform.isAndroid || Platform.isIOS;
 
@@ -129,6 +130,7 @@ class AdbService {
   Future<ProcessResult> runAdbCommand(
     List<String> args, {
     bool allowFailure = false,
+    Duration? timeout,
   }) async {
     if (isMobile) {
       // Mobile stub for unsupported methods called via raw runAdb
@@ -145,7 +147,9 @@ class AdbService {
 
     onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
     try {
-      final result = await Process.run(_adbPath!, args);
+      final result = timeout == null
+          ? await Process.run(_adbPath!, args)
+          : await _runTimedCommand(args, timeout);
       if (result.stdout.toString().isNotEmpty) {
         // Filter out empty lines
         final lines = result.stdout.toString().trim();
@@ -160,6 +164,25 @@ class AdbService {
       return result;
     } catch (e) {
       onLog("Command failed: $e", 'error');
+      rethrow;
+    }
+  }
+
+  Future<ProcessResult> _runTimedCommand(
+    List<String> args,
+    Duration timeout,
+  ) async {
+    final process = await Process.start(_adbPath!, args);
+    try {
+      final output = await Future.wait<Object>([
+        process.exitCode,
+        process.stdout.transform(utf8.decoder).join(),
+        process.stderr.transform(utf8.decoder).join(),
+      ]).timeout(timeout);
+      return ProcessResult(process.pid, output[0] as int, output[1], output[2]);
+    } on TimeoutException {
+      // Kill this client command only, never the shared ADB server.
+      process.kill();
       rethrow;
     }
   }
@@ -218,15 +241,16 @@ class AdbService {
         final line = lines[i].trim();
         if (line.isEmpty) continue;
 
-        final parts = line.split(RegExp(r'\s+'));
-        if (parts.length < 2) continue;
-
-        final serial = parts[0];
-        final status = parts[1];
+        final entry = parseAdbDeviceEntry(line);
+        if (entry == null) continue;
+        final serial = entry.$1;
+        final status = entry.$2;
 
         if (status != 'device') continue;
 
-        String transport = 'usb';
+        String transport = serial.contains('._adb-tls-connect._tcp')
+            ? 'wifi'
+            : 'usb';
         String? ip;
         String? port;
 
@@ -240,6 +264,7 @@ class AdbService {
         // Get Name
         String? name = await getDeviceName(serial);
         String? abi = await getDeviceAbi(serial);
+        final identity = await getDeviceIdentity(serial);
 
         devices.add(
           DeviceModel(
@@ -250,6 +275,8 @@ class AdbService {
             port: port,
             name: name,
             abi: abi,
+            hardwareSerial: identity?.$2,
+            manufacturer: identity?.$1,
           ),
         );
       }
@@ -493,7 +520,65 @@ class AdbService {
 
   Future<void> connectTcpIp(String serial) async {
     if (isMobile) return; // Cannot switch mode from mobile client
-    await runAdbCommand(['-s', serial, 'tcpip', '5555']);
+    await runAdbCommand([
+      '-s',
+      serial,
+      'tcpip',
+      '5555',
+    ], timeout: const Duration(seconds: 8));
+  }
+
+  Future<(String, String)?> getDeviceIdentity(String serial) async {
+    try {
+      final result = await runAdbCommand(
+        [
+          '-s',
+          serial,
+          'shell',
+          'getprop ro.product.manufacturer; getprop ro.serialno',
+        ],
+        allowFailure: true,
+        timeout: const Duration(seconds: 5),
+      );
+      final lines = result.stdout.toString().trim().split(RegExp(r'\r?\n'));
+      if (result.exitCode != 0 || lines.length != 2) return null;
+      final manufacturer = lines[0].trim();
+      final hardwareSerial = lines[1].trim();
+      if (manufacturer.isEmpty ||
+          hardwareSerial.isEmpty ||
+          hardwareSerial.toLowerCase() == 'unknown') {
+        return null;
+      }
+      return (manufacturer, hardwareSerial);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Verify identity before changing a device or using a remembered address.
+  Future<bool> isExpectedDevice(String serial, String identityKey) async {
+    final identity = await getDeviceIdentity(serial);
+    return identity != null &&
+        jsonEncode([identity.$1, identity.$2]) == identityKey;
+  }
+
+  Future<void> connectLegacyWifi(String ip) async {
+    final result = await runAdbCommand([
+      'connect',
+      '$ip:5555',
+    ], timeout: const Duration(seconds: 5));
+    final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+    if (!output.contains('connected to $ip:5555')) {
+      throw AdbCommandException(['connect', '$ip:5555'], result);
+    }
+  }
+
+  Future<void> disconnectEndpoint(String endpoint) async {
+    await runAdbCommand(
+      ['disconnect', endpoint],
+      allowFailure: true,
+      timeout: const Duration(seconds: 5),
+    );
   }
 
   /// Enable wireless debugging quick settings tile on the device.
@@ -1240,7 +1325,7 @@ class AdbService {
         'shell',
         'ip',
         'route',
-      ]);
+      ], timeout: const Duration(seconds: 5));
       final output = result.stdout.toString();
       // Look for "src <IP>" in the output of `ip route`
       final match = RegExp(r'src\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output);
@@ -1255,7 +1340,7 @@ class AdbService {
         'addr',
         'show',
         'wlan0',
-      ]);
+      ], timeout: const Duration(seconds: 5));
       final output2 = result2.stdout.toString();
       final match2 = RegExp(r'inet\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output2);
       if (match2 != null) return match2.group(1);
@@ -1814,6 +1899,14 @@ class AdbService {
 }
 
 enum _RenameEntryResult { renamed, destinationExists, failed }
+
+/// mDNS instance names can contain spaces, for example a collision suffix (2).
+(String, String)? parseAdbDeviceEntry(String line) {
+  final match = RegExp(
+    r'^(.+?)\s+(device|offline|unauthorized)(?:\s|$)',
+  ).firstMatch(line.trim());
+  return match == null ? null : (match.group(1)!, match.group(2)!);
+}
 
 String? parsePlatformToolsRevision(String sourceProperties) {
   for (final line in const LineSplitter().convert(sourceProperties)) {

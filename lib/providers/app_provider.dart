@@ -12,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
+import '../services/wireless_connection_manager.dart';
 import '../services/config_service.dart';
 import '../services/device_file_parser.dart';
 import '../services/release_asset_selector.dart';
@@ -52,7 +53,12 @@ class AppProvider with ChangeNotifier {
   Map<String, AppModel> availableApps = {};
   DeviceModel? selectedDevice;
   String statusMessage = "Checking device connection...";
-  bool isBusy = false;
+  bool _operationBusy = false;
+  bool _maintainingWireless = false;
+  bool get isBusy => _operationBusy || _maintainingWireless;
+  late final WirelessConnectionManager _wirelessConnections;
+  String? _selectedDeviceIdentity;
+  bool _disposed = false;
   Timer? _heartbeatTimer;
   bool _isCheckingDevices = false;
   Process? _recordingProcess;
@@ -65,15 +71,25 @@ class AppProvider with ChangeNotifier {
   Uri latestReleasePageUrl = _openpeloReleasesPageUri;
   String? updateCheckError;
 
-  AppProvider() : _adbService = AdbService(onLog: (m, t) {}) {
-    // Re-initialize AdbService with actual log handler
-    // But we need 'this' which we can't use in initializer.
-    // So we use a wrapper or init method.
+  AppProvider({AdbService? adbService})
+    : _adbService = adbService ?? AdbService(onLog: (m, t) {}) {
+    _wirelessConnections = WirelessConnectionManager(
+      adb: _adbService,
+      save: (data) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('wireless_adb_addresses', data);
+      },
+      onBusy: (value) {
+        _maintainingWireless = value;
+        if (!_disposed) notifyListeners();
+      },
+    );
   }
 
   void init() {
     _adbService.onLog = _onLog;
-    _adbService.init().then((_) {
+    _initConnections().then((_) {
+      if (_disposed) return;
       _startHeartbeat();
       _checkDevices();
     });
@@ -82,9 +98,16 @@ class AppProvider with ChangeNotifier {
     checkForUpdates();
   }
 
+  Future<void> _initConnections() async {
+    final prefs = await SharedPreferences.getInstance();
+    _wirelessConnections.restore(prefs.getString('wireless_adb_addresses'));
+    await _adbService.init();
+  }
+
   static const int _maxLogLines = 300;
 
   void _onLog(String message, String tag) {
+    if (_disposed) return;
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.add(LogEntry('[$time]', message, tag));
     if (logs.length > _maxLogLines) {
@@ -94,7 +117,7 @@ class AppProvider with ChangeNotifier {
   }
 
   void _setBusy(bool value) {
-    isBusy = value;
+    _operationBusy = value;
     notifyListeners();
   }
 
@@ -278,10 +301,18 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> _checkDevices({bool silent = false}) async {
-    if (_isCheckingDevices) return;
+    if (_isCheckingDevices || _disposed) return;
     _isCheckingDevices = true;
     try {
-      final newDevices = await _adbService.getConnectedDevices();
+      var detected = await _adbService.getConnectedDevices();
+      if (_disposed) return;
+      if (!isBusy && !isRecording) {
+        if (await _wirelessConnections.maintain(detected)) {
+          detected = await _adbService.getConnectedDevices();
+        }
+      }
+      if (_disposed) return;
+      final newDevices = prioritizeDeviceConnections(detected);
       if (!listEquals(newDevices, devices)) {
         devices = newDevices;
 
@@ -293,12 +324,25 @@ class AppProvider with ChangeNotifier {
         } else {
           // Select first if none selected or previous selection gone
           if (selectedDevice == null ||
-              !devices.any((d) => d.serial == selectedDevice!.serial)) {
-            // Prefer wifi
-            selectedDevice = devices.firstWhere(
-              (d) => d.transport == 'wifi',
-              orElse: () => devices.first,
+              !devices.any(
+                (d) =>
+                    d.serial == selectedDevice!.serial &&
+                    (_selectedDeviceIdentity == null ||
+                        d.identityKey == _selectedDeviceIdentity),
+              )) {
+            final sameDevice = devices.where(
+              (d) =>
+                  d.identityKey == _selectedDeviceIdentity &&
+                  _selectedDeviceIdentity != null,
             );
+            if (_selectedDeviceIdentity != null) {
+              selectedDevice = sameDevice.isEmpty ? null : sameDevice.first;
+            } else {
+              selectedDevice = devices.firstWhere(
+                (d) => d.isPeloton,
+                orElse: () => devices.first,
+              );
+            }
           } else {
             // Update selected device info
             selectedDevice = devices.firstWhere(
@@ -306,7 +350,12 @@ class AppProvider with ChangeNotifier {
             );
           }
 
-          statusMessage = "✅ Connected to ${selectedDevice!.displayName}";
+          _selectedDeviceIdentity =
+              selectedDevice?.identityKey ?? _selectedDeviceIdentity;
+          statusMessage = selectedDevice == null
+              ? "Waiting for the selected device. You can select another device."
+              : "✅ Connected to ${selectedDevice!.displayName}";
+          if (selectedDevice == null) availableApps = {};
           if (!silent) _onLog(statusMessage, 'status');
           _loadApps();
         }
@@ -321,13 +370,14 @@ class AppProvider with ChangeNotifier {
     if (selectedDevice == null) return;
     final targetSerial = selectedDevice!.serial;
     final apps = await _configService.loadApps(selectedDevice!.abi);
-    if (selectedDevice?.serial != targetSerial) return;
+    if (_disposed || selectedDevice?.serial != targetSerial) return;
     availableApps = apps;
     notifyListeners();
   }
 
   void selectDevice(DeviceModel device) {
     selectedDevice = device;
+    _selectedDeviceIdentity = device.identityKey;
     statusMessage = "✅ Connected to ${device.displayName}";
     _loadApps();
     notifyListeners();
@@ -1492,6 +1542,8 @@ class AppProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _wirelessConnections.dispose();
     _heartbeatTimer?.cancel();
     _recordingProcess?.kill();
     super.dispose();

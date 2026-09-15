@@ -341,6 +341,7 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: 10),
                   if (provider.devices.isNotEmpty)
                     DropdownButtonFormField<String>(
+                      key: ValueKey(provider.selectedDevice?.serial),
                       initialValue: provider.selectedDevice?.serial,
                       decoration: const InputDecoration(
                         labelText: "Target Device",

@@ -49,6 +49,34 @@ normally require a pairing port and six-digit pairing code before connecting.
 The desktop builds support `adb pair`; the experimental mobile ADB client does
 not currently support pairing a new device.
 
+### Automatic WiFi connection
+
+Desktop builds always maintain wireless ADB connections automatically. After
+you connect an Android device wirelessly once, OpenPelo verifies its manufacturer
+and hardware serial, enables legacy ADB on port 5555, and remembers its address.
+Setup may briefly interrupt the original connection. This works with any
+manufacturer whose firmware supports legacy TCP/IP ADB and reports a usable
+hardware serial. Devices connected only by USB are not switched automatically.
+
+While OpenPelo is running, it retries remembered devices when disconnected,
+including after reopening the app. This can reconnect even when the tablet's
+**Wireless debugging** toggle is off. Retry delays increase from 10 seconds to
+five minutes when a device is unavailable. When both wireless connections are
+present, OpenPelo shows the port-5555 connection. Peloton devices appear at the
+top of the device list; all other devices remain available, and your selected
+target is preserved. It verifies the manufacturer and hardware serial
+before using a remembered address, so a reassigned IP cannot silently select a
+different device.
+
+Legacy ADB is **unencrypted**: use this feature only on a trusted local network.
+Rebooting the tablet may
+remove the listener. If that happens, or its IP changes while disconnected,
+connect normally again so OpenPelo can set it up and remember the new address.
+
+Tested on a Peloton PLTN-RB1VO-2 running Android 11: port 5555 accepted a fresh
+connection with Wireless debugging off. Survival of the reported approximately
+24-hour automatic shutdown has not yet been verified.
+
 ## Build from source
 
 ### Requirements
