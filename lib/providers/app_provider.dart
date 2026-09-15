@@ -9,11 +9,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
+import '../services/wireless_connection_manager.dart';
 import '../services/config_service.dart';
+import '../services/device_file_parser.dart';
 import '../services/release_asset_selector.dart';
 import '../models/app_model.dart';
+import '../models/device_file_model.dart';
 import '../models/device_model.dart';
 import '../models/installed_app_model.dart';
 import 'package:intl/intl.dart';
@@ -49,27 +53,43 @@ class AppProvider with ChangeNotifier {
   Map<String, AppModel> availableApps = {};
   DeviceModel? selectedDevice;
   String statusMessage = "Checking device connection...";
-  bool isBusy = false;
+  bool _operationBusy = false;
+  bool _maintainingWireless = false;
+  bool get isBusy => _operationBusy || _maintainingWireless;
+  late final WirelessConnectionManager _wirelessConnections;
+  String? _selectedDeviceIdentity;
+  bool _disposed = false;
   Timer? _heartbeatTimer;
   bool _isCheckingDevices = false;
   Process? _recordingProcess;
   bool isRecording = false;
   String? _saveLocation;
+  bool _askEachDownload = false;
   bool isCheckingForUpdate = false;
   String? currentAppVersion;
   String? latestAppVersion;
   Uri latestReleasePageUrl = _openpeloReleasesPageUri;
   String? updateCheckError;
 
-  AppProvider() : _adbService = AdbService(onLog: (m, t) {}) {
-    // Re-initialize AdbService with actual log handler
-    // But we need 'this' which we can't use in initializer.
-    // So we use a wrapper or init method.
+  AppProvider({AdbService? adbService})
+    : _adbService = adbService ?? AdbService(onLog: (m, t) {}) {
+    _wirelessConnections = WirelessConnectionManager(
+      adb: _adbService,
+      save: (data) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('wireless_adb_addresses', data);
+      },
+      onBusy: (value) {
+        _maintainingWireless = value;
+        if (!_disposed) notifyListeners();
+      },
+    );
   }
 
   void init() {
     _adbService.onLog = _onLog;
-    _adbService.init().then((_) {
+    _initConnections().then((_) {
+      if (_disposed) return;
       _startHeartbeat();
       _checkDevices();
     });
@@ -78,9 +98,16 @@ class AppProvider with ChangeNotifier {
     checkForUpdates();
   }
 
+  Future<void> _initConnections() async {
+    final prefs = await SharedPreferences.getInstance();
+    _wirelessConnections.restore(prefs.getString('wireless_adb_addresses'));
+    await _adbService.init();
+  }
+
   static const int _maxLogLines = 300;
 
   void _onLog(String message, String tag) {
+    if (_disposed) return;
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
     logs.add(LogEntry('[$time]', message, tag));
     if (logs.length > _maxLogLines) {
@@ -90,7 +117,7 @@ class AppProvider with ChangeNotifier {
   }
 
   void _setBusy(bool value) {
-    isBusy = value;
+    _operationBusy = value;
     notifyListeners();
   }
 
@@ -212,17 +239,57 @@ class AppProvider with ChangeNotifier {
     return 0;
   }
 
+  static const _kSaveLocation = 'save_location';
+  static const _kAskEachDownload = 'ask_save_location_each_time';
+
+  /// Restores the save location chosen on a previous run, falling back to the
+  /// default folder when nothing is stored or the stored folder is gone.
   void _loadSaveLocation() async {
-    final docDir = await getApplicationDocumentsDirectory();
-    _saveLocation = p.join(docDir.path, "OpenPelo");
-    final dir = Directory(_saveLocation!);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+    final prefs = await SharedPreferences.getInstance();
+    _askEachDownload = prefs.getBool(_kAskEachDownload) ?? false;
+
+    final stored = prefs.getString(_kSaveLocation);
+    if (stored != null && stored.isNotEmpty) {
+      if (await Directory(stored).exists()) {
+        _saveLocation = stored;
+        notifyListeners();
+        return;
+      }
+      // Keep the preference: the folder may live on a drive or share that is
+      // simply not mounted right now, and should come back on a later launch.
+      _onLog(
+        "Save folder $stored is unavailable; using the default for now.",
+        'error',
+      );
     }
+
+    _saveLocation = await _defaultSaveLocation();
     notifyListeners();
   }
 
+  Future<String> _defaultSaveLocation() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    final path = p.join(docDir.path, "OpenPelo");
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
+  }
+
   String get saveLocation => _saveLocation ?? "";
+
+  /// When true, every file-manager download asks for a destination instead of
+  /// using [saveLocation].
+  bool get askEachDownload => _askEachDownload;
+
+  Future<void> setAskEachDownload(bool value) async {
+    if (_askEachDownload == value) return;
+    _askEachDownload = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAskEachDownload, value);
+  }
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
@@ -234,10 +301,18 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<void> _checkDevices({bool silent = false}) async {
-    if (_isCheckingDevices) return;
+    if (_isCheckingDevices || _disposed) return;
     _isCheckingDevices = true;
     try {
-      final newDevices = await _adbService.getConnectedDevices();
+      var detected = await _adbService.getConnectedDevices();
+      if (_disposed) return;
+      if (!isBusy && !isRecording) {
+        if (await _wirelessConnections.maintain(detected)) {
+          detected = await _adbService.getConnectedDevices();
+        }
+      }
+      if (_disposed) return;
+      final newDevices = prioritizeDeviceConnections(detected);
       if (!listEquals(newDevices, devices)) {
         devices = newDevices;
 
@@ -249,12 +324,25 @@ class AppProvider with ChangeNotifier {
         } else {
           // Select first if none selected or previous selection gone
           if (selectedDevice == null ||
-              !devices.any((d) => d.serial == selectedDevice!.serial)) {
-            // Prefer wifi
-            selectedDevice = devices.firstWhere(
-              (d) => d.transport == 'wifi',
-              orElse: () => devices.first,
+              !devices.any(
+                (d) =>
+                    d.serial == selectedDevice!.serial &&
+                    (_selectedDeviceIdentity == null ||
+                        d.identityKey == _selectedDeviceIdentity),
+              )) {
+            final sameDevice = devices.where(
+              (d) =>
+                  d.identityKey == _selectedDeviceIdentity &&
+                  _selectedDeviceIdentity != null,
             );
+            if (_selectedDeviceIdentity != null) {
+              selectedDevice = sameDevice.isEmpty ? null : sameDevice.first;
+            } else {
+              selectedDevice = devices.firstWhere(
+                (d) => d.isPeloton,
+                orElse: () => devices.first,
+              );
+            }
           } else {
             // Update selected device info
             selectedDevice = devices.firstWhere(
@@ -262,7 +350,12 @@ class AppProvider with ChangeNotifier {
             );
           }
 
-          statusMessage = "✅ Connected to ${selectedDevice!.displayName}";
+          _selectedDeviceIdentity =
+              selectedDevice?.identityKey ?? _selectedDeviceIdentity;
+          statusMessage = selectedDevice == null
+              ? "Waiting for the selected device. You can select another device."
+              : "✅ Connected to ${selectedDevice!.displayName}";
+          if (selectedDevice == null) availableApps = {};
           if (!silent) _onLog(statusMessage, 'status');
           _loadApps();
         }
@@ -277,13 +370,14 @@ class AppProvider with ChangeNotifier {
     if (selectedDevice == null) return;
     final targetSerial = selectedDevice!.serial;
     final apps = await _configService.loadApps(selectedDevice!.abi);
-    if (selectedDevice?.serial != targetSerial) return;
+    if (_disposed || selectedDevice?.serial != targetSerial) return;
     availableApps = apps;
     notifyListeners();
   }
 
   void selectDevice(DeviceModel device) {
     selectedDevice = device;
+    _selectedDeviceIdentity = device.identityKey;
     statusMessage = "✅ Connected to ${device.displayName}";
     _loadApps();
     notifyListeners();
@@ -846,12 +940,27 @@ class AppProvider with ChangeNotifier {
     return await _adbService.pressKey(selectedDevice!.serial, 187);
   }
 
-  Future<void> chooseSaveLocation() async {
-    String? selectedDirectory = await FilePicker.getDirectoryPath();
-    if (selectedDirectory != null) {
-      _saveLocation = selectedDirectory;
-      notifyListeners();
+  /// Prompts for a folder, seeded with the current save location. Returns null
+  /// when the user cancels. Does not change the saved default.
+  Future<String?> pickDownloadDirectory() async {
+    final selected = await FilePicker.getDirectoryPath(
+      initialDirectory: saveLocation.isEmpty ? null : saveLocation,
+    );
+    if (selected == null) return null;
+    final dir = Directory(selected);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
     }
+    return selected;
+  }
+
+  Future<void> chooseSaveLocation() async {
+    final selected = await pickDownloadDirectory();
+    if (selected == null) return;
+    _saveLocation = selected;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSaveLocation, selected);
   }
 
   Future<List<Map<String, String>>> loadGuide(String filename) async {
@@ -1291,16 +1400,150 @@ class AppProvider with ChangeNotifier {
     return {'success': success, 'fail': fail};
   }
 
-  void openSaveLocation() {
-    if (_saveLocation != null) {
-      // use url_launcher or process to open folder
-      // url_launcher 'file:$path' works on some OS
-      Process.run(Platform.isWindows ? 'explorer' : 'open', [_saveLocation!]);
+  // ---------------------------------------------------------------------------
+  // File manager
+  // ---------------------------------------------------------------------------
+
+  Future<List<DeviceFileEntry>> listDeviceFiles(
+    String deviceSerial,
+    String path,
+  ) async {
+    return await _adbService.listDirectory(deviceSerial, path);
+  }
+
+  /// Lets the user pick local files and pushes them into [remoteDir].
+  /// Returns the number of files uploaded successfully, or null if the picker
+  /// was cancelled.
+  Future<int?> uploadFilesToDevice(
+    String deviceSerial,
+    String remoteDir, {
+    void Function(int done, int total, String name)? onProgress,
+  }) async {
+    final picked = await FilePicker.pickFiles(
+      dialogTitle: 'Select files to upload',
+    );
+    final paths = picked.map((f) => f.path).whereType<String>().toList();
+    if (paths.isEmpty) return null;
+
+    _setBusy(true);
+    var success = 0;
+    try {
+      for (var i = 0; i < paths.length; i++) {
+        final name = p.basename(paths[i]);
+        onProgress?.call(i, paths.length, name);
+        try {
+          await _adbService.pushFile(deviceSerial, paths[i], remoteDir);
+          _onLog("Uploaded $name to $remoteDir", 'info');
+          success++;
+        } catch (e) {
+          _onLog("Failed to upload $name: $e", 'error');
+        }
+      }
+    } finally {
+      _setBusy(false);
     }
+    return success;
+  }
+
+  /// Pulls [entry] into [destination], or the save location when omitted.
+  /// Returns the local path on success.
+  Future<String?> downloadDeviceEntry(
+    String deviceSerial,
+    DeviceFileEntry entry, {
+    String? destination,
+  }) async {
+    final root = destination ?? saveLocation;
+    if (root.isEmpty) return null;
+    _setBusy(true);
+    try {
+      final localPath = _uniqueLocalPath(safeLocalEntryPath(root, entry.name));
+      await _adbService.pullEntry(deviceSerial, entry.path, localPath);
+      _onLog("Downloaded ${entry.name} to $localPath", 'info');
+      return localPath;
+    } catch (e) {
+      _onLog("Failed to download ${entry.name}: $e", 'error');
+      return null;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  String _uniqueLocalPath(String path) {
+    if (!File(path).existsSync() && !Directory(path).existsSync()) return path;
+    final dir = p.dirname(path);
+    final base = p.basenameWithoutExtension(path);
+    final ext = p.extension(path);
+    for (var i = 1; ; i++) {
+      final candidate = p.join(dir, '${base}_$i$ext');
+      if (!File(candidate).existsSync() && !Directory(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+  }
+
+  Future<bool> createDeviceFolder(
+    String deviceSerial,
+    String parentDir,
+    String name,
+  ) async {
+    final path = joinRemotePath(parentDir, name);
+    final ok = await _adbService.makeDirectory(deviceSerial, path);
+    _onLog(
+      ok ? "Created folder $path" : "Failed to create folder $path",
+      ok ? 'info' : 'error',
+    );
+    return ok;
+  }
+
+  Future<bool> renameDeviceEntry(
+    String deviceSerial,
+    DeviceFileEntry entry,
+    String newName,
+  ) async {
+    final target = joinRemotePath(parentRemotePath(entry.path), newName);
+    final ok = await _adbService.renameEntry(deviceSerial, entry.path, target);
+    _onLog(
+      ok
+          ? "Renamed ${entry.name} to $newName"
+          : "Failed to rename ${entry.name}",
+      ok ? 'info' : 'error',
+    );
+    return ok;
+  }
+
+  Future<bool> deleteDeviceEntry(
+    String deviceSerial,
+    DeviceFileEntry entry,
+  ) async {
+    _setBusy(true);
+    try {
+      final ok = await _adbService.deleteEntry(deviceSerial, entry.path);
+      _onLog(
+        ok ? "Deleted ${entry.path}" : "Failed to delete ${entry.path}",
+        ok ? 'info' : 'error',
+      );
+      return ok;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  /// Reveals [path] in the host file browser, defaulting to the save location.
+  void openSaveLocation({String? path}) {
+    final target = path ?? _saveLocation;
+    if (target == null || target.isEmpty) return;
+    final opener = Platform.isWindows
+        ? 'explorer'
+        : Platform.isMacOS
+        ? 'open'
+        : 'xdg-open';
+    Process.run(opener, [target]);
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _wirelessConnections.dispose();
     _heartbeatTimer?.cancel();
     _recordingProcess?.kill();
     super.dispose();
