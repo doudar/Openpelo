@@ -10,7 +10,9 @@ import 'package:flutter_adb/flutter_adb.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/device_model.dart';
+import '../models/device_file_model.dart';
 import '../models/installed_app_model.dart';
+import 'device_file_parser.dart';
 
 class AdbService {
   static const bundledPlatformToolsRevision = '37.0.1';
@@ -22,7 +24,8 @@ class AdbService {
   String? _connectedIp;
   int _connectedPort = 5555;
 
-  AdbService({required this.onLog});
+  AdbService({required this.onLog, String? executablePath})
+    : _adbPath = executablePath;
 
   bool get isMobile => Platform.isAndroid || Platform.isIOS;
 
@@ -127,6 +130,7 @@ class AdbService {
   Future<ProcessResult> runAdbCommand(
     List<String> args, {
     bool allowFailure = false,
+    Duration? timeout,
   }) async {
     if (isMobile) {
       // Mobile stub for unsupported methods called via raw runAdb
@@ -143,7 +147,9 @@ class AdbService {
 
     onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
     try {
-      final result = await Process.run(_adbPath!, args);
+      final result = timeout == null
+          ? await Process.run(_adbPath!, args)
+          : await _runTimedCommand(args, timeout);
       if (result.stdout.toString().isNotEmpty) {
         // Filter out empty lines
         final lines = result.stdout.toString().trim();
@@ -158,6 +164,25 @@ class AdbService {
       return result;
     } catch (e) {
       onLog("Command failed: $e", 'error');
+      rethrow;
+    }
+  }
+
+  Future<ProcessResult> _runTimedCommand(
+    List<String> args,
+    Duration timeout,
+  ) async {
+    final process = await Process.start(_adbPath!, args);
+    try {
+      final output = await Future.wait<Object>([
+        process.exitCode,
+        process.stdout.transform(utf8.decoder).join(),
+        process.stderr.transform(utf8.decoder).join(),
+      ]).timeout(timeout);
+      return ProcessResult(process.pid, output[0] as int, output[1], output[2]);
+    } on TimeoutException {
+      // Kill this client command only, never the shared ADB server.
+      process.kill();
       rethrow;
     }
   }
@@ -216,15 +241,16 @@ class AdbService {
         final line = lines[i].trim();
         if (line.isEmpty) continue;
 
-        final parts = line.split(RegExp(r'\s+'));
-        if (parts.length < 2) continue;
-
-        final serial = parts[0];
-        final status = parts[1];
+        final entry = parseAdbDeviceEntry(line);
+        if (entry == null) continue;
+        final serial = entry.$1;
+        final status = entry.$2;
 
         if (status != 'device') continue;
 
-        String transport = 'usb';
+        String transport = serial.contains('._adb-tls-connect._tcp')
+            ? 'wifi'
+            : 'usb';
         String? ip;
         String? port;
 
@@ -238,6 +264,7 @@ class AdbService {
         // Get Name
         String? name = await getDeviceName(serial);
         String? abi = await getDeviceAbi(serial);
+        final identity = await getDeviceIdentity(serial);
 
         devices.add(
           DeviceModel(
@@ -248,6 +275,8 @@ class AdbService {
             port: port,
             name: name,
             abi: abi,
+            hardwareSerial: identity?.$2,
+            manufacturer: identity?.$1,
           ),
         );
       }
@@ -491,7 +520,65 @@ class AdbService {
 
   Future<void> connectTcpIp(String serial) async {
     if (isMobile) return; // Cannot switch mode from mobile client
-    await runAdbCommand(['-s', serial, 'tcpip', '5555']);
+    await runAdbCommand([
+      '-s',
+      serial,
+      'tcpip',
+      '5555',
+    ], timeout: const Duration(seconds: 8));
+  }
+
+  Future<(String, String)?> getDeviceIdentity(String serial) async {
+    try {
+      final result = await runAdbCommand(
+        [
+          '-s',
+          serial,
+          'shell',
+          'getprop ro.product.manufacturer; getprop ro.serialno',
+        ],
+        allowFailure: true,
+        timeout: const Duration(seconds: 5),
+      );
+      final lines = result.stdout.toString().trim().split(RegExp(r'\r?\n'));
+      if (result.exitCode != 0 || lines.length != 2) return null;
+      final manufacturer = lines[0].trim();
+      final hardwareSerial = lines[1].trim();
+      if (manufacturer.isEmpty ||
+          hardwareSerial.isEmpty ||
+          hardwareSerial.toLowerCase() == 'unknown') {
+        return null;
+      }
+      return (manufacturer, hardwareSerial);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Verify identity before changing a device or using a remembered address.
+  Future<bool> isExpectedDevice(String serial, String identityKey) async {
+    final identity = await getDeviceIdentity(serial);
+    return identity != null &&
+        jsonEncode([identity.$1, identity.$2]) == identityKey;
+  }
+
+  Future<void> connectLegacyWifi(String ip) async {
+    final result = await runAdbCommand([
+      'connect',
+      '$ip:5555',
+    ], timeout: const Duration(seconds: 5));
+    final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+    if (!output.contains('connected to $ip:5555')) {
+      throw AdbCommandException(['connect', '$ip:5555'], result);
+    }
+  }
+
+  Future<void> disconnectEndpoint(String endpoint) async {
+    await runAdbCommand(
+      ['disconnect', endpoint],
+      allowFailure: true,
+      timeout: const Duration(seconds: 5),
+    );
   }
 
   /// Enable wireless debugging quick settings tile on the device.
@@ -1238,7 +1325,7 @@ class AdbService {
         'shell',
         'ip',
         'route',
-      ]);
+      ], timeout: const Duration(seconds: 5));
       final output = result.stdout.toString();
       // Look for "src <IP>" in the output of `ip route`
       final match = RegExp(r'src\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output);
@@ -1253,7 +1340,7 @@ class AdbService {
         'addr',
         'show',
         'wlan0',
-      ]);
+      ], timeout: const Duration(seconds: 5));
       final output2 = result2.stdout.toString();
       final match2 = RegExp(r'inet\s+(\d+\.\d+\.\d+\.\d+)').firstMatch(output2);
       if (match2 != null) return match2.group(1);
@@ -1612,6 +1699,213 @@ class AdbService {
     await runAdbCommand(['-s', serial, 'pull', remotePath, localPath]);
     await runAdbCommand(['-s', serial, 'shell', 'rm', remotePath]);
   }
+
+  // ---------------------------------------------------------------------------
+  // File manager
+  // ---------------------------------------------------------------------------
+
+  Future<List<DeviceFileEntry>> listDirectory(
+    String serial,
+    String path,
+  ) async {
+    // Trailing slash makes ls follow symlinked directories such as /sdcard.
+    final target = path.endsWith('/') ? path : '$path/';
+    final output = await _runShellCommandText(
+      serial,
+      'ls -la ${quoteShellArg(target)}',
+    );
+    final lower = output.toLowerCase();
+    if (lower.contains('permission denied') ||
+        lower.contains('no such file') ||
+        lower.contains('not a directory')) {
+      throw Exception(output.trim().split('\n').first);
+    }
+    return parseLsOutput(output, path);
+  }
+
+  Future<void> pushFile(
+    String serial,
+    String localPath,
+    String remoteDir,
+  ) async {
+    if (isMobile) {
+      throw Exception("Uploading files is not supported on the mobile client.");
+    }
+    final remotePath = joinRemotePath(remoteDir, p.basename(localPath));
+    if (await _remoteEntryExists(serial, remotePath)) {
+      throw Exception('A file named ${p.basename(localPath)} already exists.');
+    }
+
+    final temporaryPath = await _unusedRemoteTransferPath(serial, remoteDir);
+    try {
+      await runAdbCommand(['-s', serial, 'push', localPath, temporaryPath]);
+      final renameResult = await _renameEntryNoClobber(
+        serial,
+        temporaryPath,
+        remotePath,
+      );
+      if (renameResult == _RenameEntryResult.destinationExists) {
+        throw Exception(
+          'A file named ${p.basename(localPath)} already exists.',
+        );
+      }
+      if (renameResult == _RenameEntryResult.failed) {
+        throw Exception('Could not finish uploading ${p.basename(localPath)}.');
+      }
+    } catch (_) {
+      await _runSilentShellCommand(
+        serial,
+        'rm -rf ${quoteShellArg(temporaryPath)}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> pullEntry(
+    String serial,
+    String remotePath,
+    String localPath,
+  ) async {
+    final temporaryPath = await _unusedLocalTransferPath(localPath);
+    try {
+      if (isMobile) {
+        if (_connectedIp == null) throw Exception("No device connected.");
+        final success = await Adb.downloadFile(
+          remotePath,
+          temporaryPath,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        if (!success) throw Exception("Failed to download $remotePath");
+      } else {
+        await runAdbCommand(['-s', serial, 'pull', remotePath, temporaryPath]);
+      }
+      await _moveLocalEntry(temporaryPath, localPath);
+    } catch (_) {
+      await _deleteLocalEntry(temporaryPath);
+      rethrow;
+    }
+  }
+
+  Future<bool> makeDirectory(String serial, String path) =>
+      _runSilentShellCommand(serial, 'mkdir -p ${quoteShellArg(path)}');
+
+  Future<bool> renameEntry(String serial, String from, String to) async {
+    final result = await _renameEntryNoClobber(serial, from, to);
+    if (result == _RenameEntryResult.destinationExists) {
+      onLog('Destination already exists: $to', 'error');
+    }
+    return result == _RenameEntryResult.renamed;
+  }
+
+  Future<_RenameEntryResult> _renameEntryNoClobber(
+    String serial,
+    String from,
+    String to,
+  ) async {
+    const destinationExistsMarker = '__OPENPELO_DESTINATION_EXISTS__';
+    final quotedTo = quoteShellArg(to);
+    try {
+      final output = await _runShellCommandText(
+        serial,
+        'if [ -e $quotedTo ] || [ -L $quotedTo ]; then '
+        'printf $destinationExistsMarker; '
+        'else mv ${quoteShellArg(from)} $quotedTo; fi',
+      );
+      final text = output.trim();
+      if (text == destinationExistsMarker) {
+        return _RenameEntryResult.destinationExists;
+      }
+      if (text.isEmpty) return _RenameEntryResult.renamed;
+      onLog(text, 'error');
+      return _RenameEntryResult.failed;
+    } catch (e) {
+      onLog('Shell command failed: $e', 'error');
+      return _RenameEntryResult.failed;
+    }
+  }
+
+  Future<bool> deleteEntry(String serial, String path) =>
+      _runSilentShellCommand(serial, 'rm -rf ${quoteShellArg(path)}');
+
+  /// Runs a shell command that prints nothing on success and returns whether
+  /// it stayed silent.
+  Future<bool> _runSilentShellCommand(String serial, String command) async {
+    try {
+      final output = await _runShellCommandText(serial, command);
+      final ok = output.trim().isEmpty;
+      if (!ok) onLog(output.trim(), 'error');
+      return ok;
+    } catch (e) {
+      onLog("Shell command failed: $e", 'error');
+      return false;
+    }
+  }
+
+  Future<bool> _remoteEntryExists(String serial, String path) async {
+    final quotedPath = quoteShellArg(path);
+    final output = await _runShellCommandText(
+      serial,
+      'if [ -e $quotedPath ] || [ -L $quotedPath ]; then printf 1; '
+      'else printf 0; fi',
+    );
+    return output.trim() == '1';
+  }
+
+  Future<String> _unusedRemoteTransferPath(
+    String serial,
+    String remoteDir,
+  ) async {
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    for (var suffix = 0; ; suffix++) {
+      final name = '.openpelo-upload-$stamp${suffix == 0 ? '' : '-$suffix'}';
+      final candidate = joinRemotePath(remoteDir, name);
+      if (!await _remoteEntryExists(serial, candidate)) return candidate;
+    }
+  }
+
+  Future<String> _unusedLocalTransferPath(String localPath) async {
+    final directory = p.dirname(localPath);
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    for (var suffix = 0; ; suffix++) {
+      final name = '.openpelo-download-$stamp${suffix == 0 ? '' : '-$suffix'}';
+      final candidate = p.join(directory, name);
+      if (!await File(candidate).exists() &&
+          !await Directory(candidate).exists()) {
+        return candidate;
+      }
+    }
+  }
+
+  Future<void> _moveLocalEntry(String from, String to) async {
+    if (await File(from).exists()) {
+      await File(from).rename(to);
+      return;
+    }
+    if (await Directory(from).exists()) {
+      await Directory(from).rename(to);
+      return;
+    }
+    throw Exception('Downloaded entry was not created.');
+  }
+
+  Future<void> _deleteLocalEntry(String path) async {
+    if (await File(path).exists()) {
+      await File(path).delete();
+    } else if (await Directory(path).exists()) {
+      await Directory(path).delete(recursive: true);
+    }
+  }
+}
+
+enum _RenameEntryResult { renamed, destinationExists, failed }
+
+/// mDNS instance names can contain spaces, for example a collision suffix (2).
+(String, String)? parseAdbDeviceEntry(String line) {
+  final match = RegExp(
+    r'^(.+?)\s+(device|offline|unauthorized)(?:\s|$)',
+  ).firstMatch(line.trim());
+  return match == null ? null : (match.group(1)!, match.group(2)!);
 }
 
 String? parsePlatformToolsRevision(String sourceProperties) {

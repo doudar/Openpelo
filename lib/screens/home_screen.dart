@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/app_list_widget.dart';
+import '../widgets/file_manager_dialog.dart';
 import '../widgets/guide_dialog.dart';
 import '../widgets/installed_app_manager_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
@@ -79,6 +80,19 @@ class HomeScreen extends StatelessWidget {
                     builder: (_) => const InstalledAppManagerDialog(),
                   );
                 }
+              } else if (value == 'file_manager') {
+                final deviceSerial = provider.selectedDevice?.serial;
+                if (deviceSerial == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("No device selected")),
+                  );
+                } else {
+                  showDialog(
+                    context: context,
+                    builder: (_) =>
+                        FileManagerDialog(deviceSerial: deviceSerial),
+                  );
+                }
               } else if (value == 'dev_options') {
                 if (provider.selectedDevice == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -119,6 +133,10 @@ class HomeScreen extends StatelessWidget {
               const PopupMenuItem(
                 value: 'installed_apps',
                 child: Text('Installed App Manager'),
+              ),
+              const PopupMenuItem(
+                value: 'file_manager',
+                child: Text('File Manager'),
               ),
               const PopupMenuItem(
                 value: 'uninstall',
@@ -323,6 +341,7 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: 10),
                   if (provider.devices.isNotEmpty)
                     DropdownButtonFormField<String>(
+                      key: ValueKey(provider.selectedDevice?.serial),
                       initialValue: provider.selectedDevice?.serial,
                       decoration: const InputDecoration(
                         labelText: "Target Device",
@@ -418,12 +437,12 @@ class HomeScreen extends StatelessWidget {
 
                   const _SectionHeader(
                     icon: Icons.perm_media_outlined,
-                    label: "Media Settings",
+                    label: "Downloads & Media",
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Text("Save Location: "),
+                      const Text("Save folder: "),
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -435,15 +454,18 @@ class HomeScreen extends StatelessWidget {
                             border: Border.all(color: colorScheme.outline),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
-                            provider.saveLocation,
-                            overflow: TextOverflow.ellipsis,
+                          child: Tooltip(
+                            message: provider.saveLocation,
+                            child: Text(
+                              provider.saveLocation,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.folder),
-                        onPressed: provider.openSaveLocation,
+                        onPressed: () => provider.openSaveLocation(),
                         tooltip: "Open Folder",
                       ),
                       IconButton(

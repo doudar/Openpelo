@@ -1,7 +1,7 @@
 name: openpelo
 description: "Your Machine, Your Apps"
 publish_to: 'none'
-version: 1.0.74
+version: 1.0.75
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -24,6 +24,7 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   provider: ^6.1.5+1
+  shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
   window_manager: ^0.5.2
 
