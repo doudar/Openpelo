@@ -2,35 +2,41 @@
 
 <img src="./images/Icon.png" alt="OpenPelo icon" width="150"/>
 
-OpenPelo is a Flutter desktop app for installing Android applications and
-managing ADB-enabled devices. It is designed primarily for Android-based
+OpenPelo lets you install apps, manage files, and control your Android device
+from a Windows, Mac, or Linux computer. It is designed primarily for Android-based
 fitness equipment such as Peloton, Echelon, and NordicTrack, but it can work
 with other Android tablets, phones, and TVs.
 
-![OpenPelo](./images/OpenPelo.png)
+![OpenPelo home screen with a selected device, app catalog, ADB messages, and media controls](./images/screenshots/overview.png)
+
+*Screenshots use sample devices, apps, and files.*
+
+[Install](#install-a-release) · [Connect a device](#connect-a-device) ·
+[Feature walkthrough](#feature-walkthrough) · [Troubleshooting](#troubleshooting) ·
+[For contributors](#for-contributors)
 
 ## Features
 
-- Bundled Android Platform-Tools; users do not need a separate ADB install
-- USB and wireless ADB connections
-- Curated application catalog with ARM64 and ARMv7 variants
-- Local APK installation
-- Screen mirroring, screenshots, and screen recording
-- Device file manager for browsing, uploading, and downloading files
-- Installed-app, launcher, rotation, and developer-setting management
-- Windows, macOS, and Linux desktop builds
+| Feature | What you can do |
+| --- | --- |
+| Device connections | Connect over USB or WiFi, switch between devices, and reconnect automatically. |
+| App installation | Choose from a catalog tailored to your device or install an APK (Android app file) from your computer. |
+| Installed App Manager | Find, open, stop, reset, or uninstall apps, and save a list of what's installed. |
+| File Manager | Browse device storage, transfer files, and organize files and folders. |
+| Remote screen and media | Control the device through a screen preview, save PNG screenshots, and record MP4 videos. |
+| Device tools | Choose a default launcher, rotate the screen, apply developer settings, and access Peloton-specific tools. |
+| Ready to use | Includes the connection tools you need, with no separate ADB installation. |
 
 ## Install a release
 
-Download the appropriate artifact from the
+Download the version for your computer from the
 [GitHub Releases](../../releases) page:
 
 - Windows: `OpenPelo_Setup_Windows.exe`
 - macOS: `OpenPelo-macOS.dmg`
 - Linux: `OpenPelo-Linux.tar.gz`
 
-On first launch, OpenPelo extracts its bundled copy of ADB into the operating
-system's application-support directory.
+OpenPelo sets up its connection tools automatically the first time you open it.
 
 ## Connect a device
 
@@ -40,122 +46,177 @@ system's application-support directory.
 2. Enable USB debugging.
 3. Connect the device with a USB data cable.
 4. Accept the device's **Allow USB debugging** prompt.
-5. Launch OpenPelo and select the detected device.
+5. Launch OpenPelo, click **Refresh Devices** if needed, and choose the device
+   from **Target Device**. The status banner and **ADB Messages** show connection
+   progress.
 
-### Wireless ADB
+The **Developer Mode Guide** on the home screen provides an in-app setup
+walkthrough. Menu locations depend on the device and its firmware.
 
-Open **Connect via WiFi** and follow the on-screen guide. Android 11 and newer
-normally require a pairing port and six-digit pairing code before connecting.
-The desktop builds support `adb pair`; the experimental mobile ADB client does
-not currently support pairing a new device.
+### WiFi
+
+![Wireless Connection screen with discovery, USB setup, pairing fields, and connection status](./images/screenshots/wireless-connection.png)
+
+1. Connect the computer and Android device to the same local network.
+2. Open **Connect via WiFi**, follow the guide, and click
+   **I'm Ready - Connect Device**.
+3. For a new Android 11+ wireless-debugging connection, open the device's
+   **Pair device with pairing code** dialog. Enter its IP address, **Pairing
+   Port**, and six-digit **Pairing Code** in OpenPelo.
+4. Enter the **Connection Port** from the device's main Wireless debugging
+   screen. This is usually different from the pairing port.
+5. Click **Connect** and check the status below the form. Click **Done** to
+   return to the home screen, or **Connect Another** to clear the form and add
+   another device.
+
+Use **Scan for Devices** to find your device and fill in its connection details.
+Enter the pairing code shown on the device yourself. If the scan finds nothing,
+enter the details manually. You only need the pairing code and pairing port
+the first time you pair a device.
+
+### Set up WiFi through USB
+
+With your device connected over USB and on the same WiFi network as your
+computer, open the wireless connection form and click **Pair using USB**.
+Choose your device if prompted. Once **Wireless ADB Enabled** appears, you
+can unplug the cable and continue over WiFi.
 
 ### Automatic WiFi connection
 
-Desktop builds always maintain wireless ADB connections automatically. After
-you connect an Android device wirelessly once, OpenPelo verifies its manufacturer
-and hardware serial, enables legacy ADB on port 5555, and remembers its address.
-Setup may briefly interrupt the original connection. This works with any
-manufacturer whose firmware supports legacy TCP/IP ADB and reports a usable
-hardware serial. Devices connected only by USB are not switched automatically.
+After your first WiFi connection, OpenPelo remembers supported devices and
+tries to reconnect automatically, including when you reopen the app. If it
+doesn't reconnect after a device restart or network change, use **Connect via
+WiFi** or **Pair using USB** again.
 
-While OpenPelo is running, it retries remembered devices when disconnected,
-including after reopening the app. This can reconnect even when the tablet's
-**Wireless debugging** toggle is off. Retry delays increase from 10 seconds to
-five minutes when a device is unavailable. When both wireless connections are
-present, OpenPelo shows the port-5555 connection. Peloton devices appear at the
-top of the device list; all other devices remain available, and your selected
-target is preserved. It verifies the manufacturer and hardware serial
-before using a remembered address, so a reassigned IP cannot silently select a
-different device.
+## Feature walkthrough
 
-Legacy ADB is **unencrypted**: use this feature only on a trusted local network.
-Rebooting the tablet may
-remove the listener. If that happens, or its IP changes while disconnected,
-connect normally again so OpenPelo can set it up and remember the new address.
+### 1. Choose the device and follow activity
 
-Tested on a Peloton PLTN-RB1VO-2 running Android 11: port 5555 accepted a fresh
-connection with Wireless debugging off. Survival of the reported approximately
-24-hour automatic shutdown has not yet been verified.
+Use **Target Device** to choose the device you want to manage.
+The list identifies USB and WiFi connections. Peloton devices appear first;
+other Android devices remain available. Check this selection before starting
+an operation when multiple devices are connected.
 
-## Build from source
+The status banner shows whether you're connected. **ADB Messages** shows
+progress and details if something goes wrong. Scroll back to read earlier
+messages; the down-arrow control returns to the latest activity. **Refresh
+Devices** checks the connection again and refreshes the compatible app list.
 
-### Requirements
+### 2. Install apps
 
-- Flutter 3.44.4 or newer
-- Dart 3.10 or newer
-- Platform prerequisites from Flutter's desktop setup guide
-- Inno Setup 6 when creating the Windows installer
+1. Connect and select a device to populate **Available Apps**.
+2. Read the descriptions and check the apps you want. Scroll inside the catalog
+   to see more entries.
+3. Click **Install Selected Apps**. OpenPelo downloads and installs the selected
+   apps; follow **ADB Messages** for progress and results.
+4. To install an APK you already have, click **Install Local APK** and choose
+   the `.apk` file on your computer.
 
-```powershell
-flutter pub get
-flutter analyze
-flutter test
-flutter run -d windows
-```
+The bundled catalog includes fitness utilities such as SmartSpin2k and Grupetto,
+launchers such as Lawnchair, app stores, browsers, file managers, and media or
+streaming clients. OpenPelo adjusts the list for your device, with older app
+versions available for older hardware. Some apps may still require a newer
+version of Android.
 
-Use `-d macos` or `-d linux` on those platforms. Release bundles are created
-with:
+If Android reports a **Signature Mismatch**, OpenPelo offers **Uninstall &
+Reinstall**. That removes the existing app and its local data before reinstalling.
+Choose **Cancel** to keep the current installation.
 
-```powershell
-flutter build windows --release
-flutter build macos --release
-flutter build linux --release
-```
+### 3. Manage installed apps
 
-See [DISTRIBUTION.md](./DISTRIBUTION.md) for packaging details.
+![Installed App Manager showing search, system-app filter, export, and per-app actions](./images/screenshots/installed-app-manager.png)
 
-## Application catalog
+Open **Tools → Installed App Manager** to inspect apps on the selected device.
 
-Applications are defined in `apps_config.json`:
+- **Search apps** finds apps by name or Android package name. Enable **System
+  apps** to include built-in apps, and use **Refresh** to reload the list.
+- **Launch** starts an app and opens the remote screen view. **Force stop**
+  stops the app; **App settings** opens its Android settings and the remote
+  screen view so you can interact with them.
+- **Clear data** erases the app's saved settings and local data after
+  confirmation. **Uninstall** removes an app you installed; this action is
+  disabled for built-in apps.
+- **Export visible list** saves the apps shown in the list to a text file in
+  your save folder.
 
-```json
-{
-  "apps": {
-    "Example App": {
-      "url": "https://github.com/example/app/releases/latest",
-      "asset_name": "example-arm64.apk",
-      "asset_pattern": "example-*-arm64.apk",
-      "package_id": "com.example.app",
-      "sha256": "optional-lowercase-sha256",
-      "description": "Description shown in OpenPelo",
-      "abi": "arm64-v8a"
-    }
-  }
-}
-```
+### 4. Browse and transfer device files
 
-- `url` must use HTTPS. GitHub latest-release URLs and API URLs are resolved
-  to release assets automatically.
-- `asset_name` is the preferred APK filename.
-- `asset_pattern` is an optional glob used when release filenames contain a
-  changing version. Ambiguous matches are rejected.
-- `package_id` is the optional Android application ID used when resolving an
-  incompatible-signature reinstall.
-- `sha256` is an optional integrity checksum. Add it whenever the URL points
-  to an immutable, versioned APK.
-- `abi` is `arm64-v8a` or `armeabi-v7a`.
+![File Manager showing device folders, sortable columns, file actions, and download destination controls](./images/screenshots/file-manager.png)
 
-## Automated builds
+Open **Tools → File Manager** to browse your device's shared storage, with
+shortcuts to **sdcard**, **Download**, **DCIM**, and **Movies**.
 
-GitHub Actions formats, analyzes, and tests the project before building
-Windows, macOS, and Linux artifacts. Pull requests receive unsigned validation
-builds. Trusted pushes to `main` additionally sign and notarize the macOS DMG,
-bump the patch version, tag it, and publish a GitHub release.
+1. Click a folder to open it, use **Up one level**, or enter a folder location in
+   **Device path** and press Enter.
+2. Click the **Name**, **Size**, or **Modified** column header to sort. Click
+   the same header again to reverse the order.
+3. Use **Upload files here** to select local files and send them to the current
+   device folder. Use **New folder** to create a folder there.
+4. Use a row's **Download** action to copy a file or folder to your computer.
+   **More actions → Download to...** selects a destination for just that
+   download. **Rename** and **Delete** operate on the device; deletion requires
+   confirmation.
 
-The Windows installer version is injected from `version.json` by the workflow.
-Mobile releases require their own signing configuration; Android release
-credentials belong in an untracked `android/key.properties` file.
+The bottom of the dialog shows the download destination. **Change** updates the
+save folder, while **Ask each time** prompts for a destination for each download.
+The transfer area displays progress and results, and a completed download can
+be located with **Open containing folder**.
 
-## Security
+### 5. View, control, and capture the device screen
 
-OpenPelo can install third-party software and modify system settings on a
-connected Android device. Review catalog changes carefully. Downloads are
-restricted to HTTPS and checked for APK/ZIP structure; immutable downloads can
-also be pinned with SHA-256. Android still performs its normal package-signing
-checks during installation.
+The home screen's **Downloads & Media** section groups the save folder and
+capture controls. Scroll down if it is below the visible area of the window.
 
-Some device-management operations are destructive. Back up important data and
-read confirmation dialogs before proceeding.
+| Control | Walkthrough |
+| --- | --- |
+| **Save folder** | Use **Change Location** to choose the computer folder used for media, file downloads, and app-list exports. **Open Folder** opens it in your file browser. |
+| **Take Screenshot** | Save a picture of the device's display to your save folder. The PNG filename includes the date and time. |
+| **View Screen** | Open **Remote Screen View**. Click the preview to tap the device; drag, use the mouse wheel, or press arrow keys to scroll. Use **Back**, **Home**, and **Recents** just as you would on the device. |
+| **Record / Stop Rec** | Click **Record** to start recording the device screen. Click **Stop Rec** to finish and save an MP4 video to your save folder. Keep the device connected while saving. |
+
+The screen preview updates periodically, so movement won't look as smooth as
+it does on the device itself.
+
+### 6. Configure the launcher and device tools
+
+![OpenPelo Tools menu listing app and file managers, launcher, rotation, developer settings, Netflix, and updates](./images/screenshots/tools.png)
+
+Open **Tools** in the upper-right corner for these additional controls:
+
+- **Set Default Launcher:** install a launcher (home screen app) first, then
+  open this tool to see available launchers. Click **Set Default** beside
+  a launcher to make it your device's home screen.
+- **Rotate Screen:** use **Rotate** to cycle the orientation in 90-degree steps,
+  or enable **Auto-rotate** to follow how the device is held. Some apps have
+  their own rotation settings.
+- **Enable Developer Settings:** choose **Wireless Debugging** and/or **Stay
+  Awake While Charging**, then click **Apply**. OpenPelo reports results for
+  the requested settings. Connect your device before using this tool.
+- **Enable/Disable Built-in Netflix:** a Peloton-specific tool with **Enable
+  Netflix** and **Restore Defaults** actions. If enabling it affects other
+  Peloton features, choose **Restore Defaults**.
+- **Uninstall Peloton Apps:** choose which Peloton apps to remove. This is an
+  advanced option; removing built-in apps can affect normal Peloton features.
+- **Check For Updates:** checks OpenPelo's GitHub releases. When a newer version
+  is found, the home screen shows **View Release**, which opens the release
+  page for download. A failed check offers **Retry**.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| No device or empty catalog | Enable USB debugging, use a data-capable cable, accept the device's authorization prompt, click **Refresh Devices**, and select **Target Device**. |
+| Wireless pairing fails | Check the current six-digit code and pairing port in the device's pairing dialog. The connection port comes from the main Wireless debugging screen. |
+| Scan finds nothing | Check that both devices are on the same network and wireless debugging is enabled. Try entering the address and ports manually. |
+| A remembered WiFi device stops reconnecting | Make sure it's on the same network as your computer, then try **Connect via WiFi** or **Pair using USB** again. |
+| An APK will not install | Check **ADB Messages** for the reason. Make sure the app supports your device and Android version. If you see **Signature Mismatch**, read the reinstall prompt before continuing. |
+| A file or setting cannot be accessed | Some system folders and settings are protected by Android. Check **ADB Messages** for details. |
+| Capture controls are missing from view | Scroll the home page to **Downloads & Media**, or enlarge the window. |
+
+## For contributors
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for building from source, updating the
+app catalog, and regenerating screenshots.
 
 ## Disclaimer
 
