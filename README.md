@@ -95,19 +95,10 @@ Desktop builds always maintain wireless ADB connections automatically. After
 you connect an Android device wirelessly once, OpenPelo verifies its manufacturer
 and hardware serial, and remembers its address.
 
-While OpenPelo is running, it retries remembered devices when disconnected,
-including after reopening the app. This can reconnect even when the tablet's
-**Wireless debugging** toggle is off. Retry delays increase from 10 seconds to
-five minutes when a device is unavailable. When both wireless connections are
-present, OpenPelo shows the port-5555 connection. Peloton devices appear at the
-top of the device list; all other devices remain available, and your selected
-target is preserved. It verifies the manufacturer and hardware serial
-before using a remembered address, so a reassigned IP cannot silently select a
-different device.
+After you successfully connect a device over WiFi, desktop versions of OpenPelo remember its verified identity and network address. While OpenPelo is open—including after you close and reopen it—it automatically tries to restore the connection if it drops. On supported devices, this may work even when Wireless debugging is switched off, provided the device is still accepting ADB connections on port 5555.
 
 Tested on a Peloton PLTN-RB1VO-2 running Android 11: port 5555 accepted a fresh
-connection with Wireless debugging off. Survival of the reported approximately
-24-hour automatic shutdown has not yet been verified.
+connection with Wireless debugging off.  This behavior is device and firmware dependent.
 
 ## Feature walkthrough
 
