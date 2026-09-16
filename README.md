@@ -153,29 +153,24 @@ Open **Tools → Installed App Manager** to inspect apps on the selected device.
 - **Export visible list** writes the filtered list to a timestamped `.txt` file
   in the save folder, with app label, package name, and system/user type.
 
-### 4. Browse and transfer device files
+### 4. Manage device files
 
 ![File Manager showing device folders, sortable columns, file actions, and download destination controls](./images/screenshots/file-manager.png)
 
-Open **Tools → File Manager**. It starts at `/sdcard` and provides shortcuts to
-**sdcard**, **Download**, **DCIM**, and **Movies**.
+Open **Tools → File Manager** to browse and manage files on the selected device.
 
-1. Click a folder to open it, use **Up one level**, or enter a directory in
-   **Device path** and press Enter.
-2. Click the **Name**, **Size**, or **Modified** column header to sort. Click
-   the same header again to reverse the order.
-3. Use **Upload files here** to select local files and send them to the current
-   device directory. Use **New folder** to create a directory there.
-4. Use a row's **Download** action to copy a file or folder to your computer.
-   **More actions → Download to...** selects a destination for just that
-   download. **Rename** and **Delete** operate on the device; deletion requires
-   confirmation.
+- Browse from `/sdcard`, jump to common media directories, or enter a device
+  path directly.
+- Upload files, download files or entire folders, and create, rename, or delete
+  directories and files.
+- Sort directory contents by name, size, or modification time.
+- Use the configured save folder for downloads, choose a destination for an
+  individual transfer, or enable **Ask each time**.
+- Monitor transfer progress and open completed downloads in your computer's
+  file manager.
 
-The bottom of the dialog shows the download destination. **Change** updates the
-save folder, while **Ask each time** prompts for a destination for each download.
-The transfer area displays progress and results, and a completed download can
-be located with **Open containing folder**. Access to directories depends on
-the device's ADB permissions; protected Android storage may be inaccessible.
+Available directories depend on the device's ADB permissions; protected Android
+storage may be inaccessible.
 
 ### 5. View, control, and capture the device screen
 
