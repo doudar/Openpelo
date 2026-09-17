@@ -34,6 +34,8 @@ jobs:
         run: flutter analyze
       - name: Run tests
         run: flutter test
+      - name: Check macOS packaging logic
+        run: python3 -m unittest discover -s tool/tests -p 'test_*.py'
 
   bump-version:
     needs: validate
@@ -142,7 +144,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get --enforce-lockfile
 
-      # Install Certificate (Copied from previous workflow)
       - name: Install Apple Certificate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -150,26 +151,37 @@ jobs:
             P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
             KEYCHAIN_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-            CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-            echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-            security list-keychain -d user -s $KEYCHAIN_PATH
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
 
       - name: Build macOS
         run: flutter build macos --release
 
-      - name: Sign App Bundle
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env: 
+      - name: Sign and verify app bundle
+        env:
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
         run: |
-          # The app is located at build/macos/Build/Products/Release/openpelo.app
-          # We force sign it using the previous identity
-          codesign --force --verbose --timestamp --options runtime --deep --sign "$CODESIGN_IDENTITY" build/macos/Build/Products/Release/openpelo.app
+          SIGNING_IDENTITY='-'
+          if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' ]]; then
+            : "${CODESIGN_IDENTITY:?A Developer ID identity is required for releases}"
+            SIGNING_IDENTITY="$CODESIGN_IDENTITY"
+          fi
+          python3 tool/sign_macos.py build/macos/Build/Products/Release/openpelo.app \
+            --identity "$SIGNING_IDENTITY" \
+            --entitlements macos/Runner/Release.entitlements
+
+      - name: Preserve resolved macOS dependency versions
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-resolved-dependencies
+          path: macos/Podfile.lock
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -217,6 +229,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           xcrun stapler staple dist/OpenPelo-macOS.dmg
+          xcrun stapler validate dist/OpenPelo-macOS.dmg
+          spctl --assess --type open --context context:primary-signature --verbose=2 dist/OpenPelo-macOS.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
@@ -235,7 +249,7 @@ jobs:
       - name: Setup Linux Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake make ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev libepoxy-dev
 
       - name: Setup Flutter SDK
         uses: flutter-actions/setup-flutter@v4.2

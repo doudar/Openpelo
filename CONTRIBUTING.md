@@ -80,13 +80,48 @@ Applications are defined in `apps_config.json`:
 ## Automated builds
 
 GitHub Actions formats, analyzes, and tests the project before building
-Windows, macOS, and Linux artifacts. Pull requests receive unsigned validation
-builds. Trusted pushes to `main` additionally sign and notarize the macOS DMG,
+Windows, macOS, and Linux artifacts. Pull requests receive validation builds;
+the macOS app is ad-hoc signed to exercise packaging without release secrets.
+Trusted pushes to `main` use Developer ID signing and notarize the macOS DMG,
 bump the patch version, tag it, and publish a GitHub release.
 
 The Windows installer version is injected from `version.json` by the workflow.
 Mobile releases require their own signing configuration; Android release
 credentials belong in an untracked `android/key.properties` file.
+
+### macOS permissions and release verification
+
+`macos/Runner/Info.plist` declares local-network use and the ADB Bonjour service
+types. On macOS 15 and newer, users may need to allow OpenPelo in **Privacy &
+Security → Local Network**. The viewer receives the Peloton's video over ADB;
+it does not capture the Mac desktop or require Mac Screen Recording permission.
+
+The Mac build resolves the native CocoaPods dependencies and retains the
+resulting `Podfile.lock` as the `macOS-resolved-dependencies` CI artifact. Update
+the checked-in lockfile from a successful Mac build when dependencies change.
+Do not synthesize its checksums on another platform.
+
+`tool/sign_macos.py` checks the built app's network declarations, viewer
+frameworks, scrcpy server and license, then signs native code from the inside
+out. It applies `Release.entitlements` to the outer app and verifies the finished
+signature and embedded entitlements. Run it after the release build:
+
+```sh
+python3 tool/sign_macos.py build/macos/Build/Products/Release/openpelo.app \
+  --identity 'Developer ID Application: YOUR SIGNING IDENTITY'
+```
+
+Use `--identity -` for an ad-hoc local build. Such a build is not a notarized
+distribution build. Portable signing-plan tests run with
+`python3 -m unittest discover -s tool/tests -p 'test_*.py'`.
+
+Before releasing viewer changes, test the signed/notarized application from
+Finder on a Mac with a Peloton attached. A terminal launch can have different
+local-network permission behavior. Confirm catalog refresh, USB and Wi-Fi ADB,
+the local-network prompt and recovery after denying permission, embedded video
+and controls, and recording to the selected folder. Close the viewer while
+recording and verify the saved MP4 plays. Cover Intel and Apple Silicon when
+available. CI signature checks do not establish these hardware results.
 
 ## Download validation
 

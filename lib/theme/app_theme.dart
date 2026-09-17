@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 class AppColors {
   static const primary = Color(0xFFC51F45);
   static const primaryDark = Color(0xFF8F1430);
-  static const secondary = Color(0xFF007C89);
+  static const secondary = Color(0xFF45515D);
   static const success = Color(0xFF188A5A);
   static const warning = Color(0xFFC77700);
   static const danger = Color(0xFFBA1A1A);
-  static const surface = Color(0xFFFFFBFB);
-  static const surfaceAlt = Color(0xFFF7F1F2);
-  static const recessedPane = Colors.white;
-  static const recessedPaneBorder = Color(0xFFDDD2D5);
-  static const outline = Color(0xFFD9C8CD);
-  static const ink = Color(0xFF21191B);
+  static const surface = Color(0xFFF7F8FA);
+  static const surfaceAlt = Color(0xFFF0F2F4);
+  static const recessedPane = Color(0xFFFFFFFF);
+  static const recessedPaneBorder = Color(0xFFD8DCE1);
+  static const outline = Color(0xFFC7CDD4);
+  static const ink = Color(0xFF20252B);
 }
 
 class AppTheme {
@@ -24,12 +24,12 @@ class AppTheme {
         ).copyWith(
           primary: AppColors.primary,
           onPrimary: Colors.white,
-          primaryContainer: const Color(0xFFFFD9E1),
-          onPrimaryContainer: const Color(0xFF3F0012),
+          primaryContainer: const Color(0xFFF9D9E0),
+          onPrimaryContainer: const Color(0xFF470013),
           secondary: AppColors.secondary,
           onSecondary: Colors.white,
-          secondaryContainer: const Color(0xFFCDEFF2),
-          onSecondaryContainer: const Color(0xFF002023),
+          secondaryContainer: const Color(0xFFE3E8EC),
+          onSecondaryContainer: const Color(0xFF17212B),
           tertiary: AppColors.warning,
           onTertiary: Colors.white,
           tertiaryContainer: const Color(0xFFFFE0B8),
@@ -37,20 +37,20 @@ class AppTheme {
           error: AppColors.danger,
           surface: AppColors.surface,
           surfaceContainerLowest: Colors.white,
-          surfaceContainerLow: const Color(0xFFFFFBFB),
-          surfaceContainer: const Color(0xFFFCF6F7),
+          surfaceContainerLow: const Color(0xFFF7F8FA),
+          surfaceContainer: const Color(0xFFF3F5F7),
           surfaceContainerHigh: AppColors.surfaceAlt,
-          surfaceContainerHighest: const Color(0xFFEDE1E4),
+          surfaceContainerHighest: const Color(0xFFE8EBEE),
           outline: AppColors.outline,
           onSurface: AppColors.ink,
-          onSurfaceVariant: const Color(0xFF5C4A4F),
+          onSurfaceVariant: const Color(0xFF59636E),
         );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surface,
-      visualDensity: VisualDensity.standard,
+      visualDensity: VisualDensity.compact,
       appBarTheme: AppBarTheme(
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
@@ -58,7 +58,7 @@ class AppTheme {
         centerTitle: false,
         titleTextStyle: const TextStyle(
           color: Colors.white,
-          fontSize: 20,
+          fontSize: 18,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -68,7 +68,7 @@ class AppTheme {
         shadowColor: AppColors.primaryDark.withValues(alpha: 0.12),
         surfaceTintColor: colorScheme.primary.withValues(alpha: 0.04),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           side: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
@@ -77,6 +77,7 @@ class AppTheme {
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          minimumSize: const Size(0, 40),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -86,7 +87,8 @@ class AppTheme {
           elevation: 0,
           shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -94,7 +96,8 @@ class AppTheme {
           foregroundColor: colorScheme.primary,
           side: BorderSide(color: colorScheme.outline),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         ),
       ),
       textButtonTheme: TextButtonThemeData(

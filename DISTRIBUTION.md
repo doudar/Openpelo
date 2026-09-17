@@ -29,6 +29,11 @@ flutter build macos --release
 Distribute the complete `openpelo.app` bundle. The GitHub Actions workflow
 signs the application and DMG, submits it for notarization, and staples the
 ticket only on trusted `main` builds where signing secrets are available.
+It uses `tool/sign_macos.py` to sign native components before the outer app,
+apply the release entitlements, and verify the result. Pull-request builds
+exercise the same script with an ad-hoc identity. CI validates the stapled DMG
+and checks its Gatekeeper assessment before publishing it. Hardware validation
+steps are in [CONTRIBUTING.md](./CONTRIBUTING.md#macos-permissions-and-release-verification).
 
 ## Linux
 

@@ -18,6 +18,9 @@ dependencies:
       url: https://github.com/doudar/flutter_adb.git
   http: ^1.6.0
   intl: ^0.20.3
+  media_kit: ^1.2.6
+  media_kit_libs_video: ^1.0.7
+  media_kit_video: ^2.0.1
   multicast_dns: ^0.3.3+1
   network_info_plus: ^8.2.1
   package_info_plus: ^10.2.1
@@ -59,3 +62,6 @@ flutter:
     - usb_debug_steps.json
     - wireless_adb_steps.json
     - ADB/
+    - assets/scrcpy/scrcpy-server-v3.3.4
+    - THIRD_PARTY_NOTICES.md
+    - assets/licenses/

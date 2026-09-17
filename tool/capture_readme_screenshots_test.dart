@@ -11,6 +11,8 @@ import 'package:openpelo/screens/home_screen.dart';
 import 'package:openpelo/theme/app_theme.dart';
 import 'package:openpelo/models/device_file_model.dart';
 import 'package:openpelo/models/device_model.dart';
+import 'package:openpelo/models/device_resources.dart';
+import 'package:openpelo/models/apk_metadata.dart';
 import 'package:openpelo/models/installed_app_model.dart';
 import 'package:openpelo/providers/app_provider.dart';
 import 'package:openpelo/services/config_service.dart';
@@ -26,9 +28,20 @@ class _ScreenshotProvider extends AppProvider {
       port: '5555',
       name: 'Peloton PLTN-RB1VO-2',
       abi: 'arm64-v8a',
+      supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+      apiLevel: 24,
+      androidVersion: '7.0',
     );
     devices = [device];
     selectedDevice = device;
+    selectedDeviceResources = const DeviceResources(
+      ramTotalBytes: 4 * 1024 * 1024 * 1024,
+      ramAvailableBytes: 1536 * 1024 * 1024,
+      cpuMaxKhz: 2200000,
+      storageTotalBytes: 24 * 1024 * 1024 * 1024,
+      storageUsedBytes: 8 * 1024 * 1024 * 1024,
+      storageAvailableBytes: 16 * 1024 * 1024 * 1024,
+    );
     statusMessage = 'Connected to ${device.displayName}';
     currentAppVersion = RegExp(
       r'^version: (.+)$',
@@ -130,14 +143,25 @@ void main() {
     debugDisableShadows = false;
     addTearDown(() => debugDisableShadows = true);
 
-    tester.view.physicalSize = const Size(1200, 940);
+    // Default desktop window, allowing for the native title bar.
+    tester.view.physicalSize = const Size(1100, 770);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final provider = _ScreenshotProvider();
-    provider.availableApps = await ConfigService().loadApps('arm64-v8a');
-    provider.availableApps['Lawnchair Launcher']!.isSelected = true;
+    final sources = await ConfigService().loadApps();
+    // Metadata confirmed from the official APKs, kept deterministic for rendering.
+    provider.availableApps = {
+      for (final name in ['Grupetto', 'Lawnchair Launcher Gen 1'])
+        name: sources[name]!.withProbe(
+          ApkMetadata(minSdk: 21, nativeAbis: []),
+          sources[name]!.url,
+        ),
+    };
+    provider.availableApps['Grupetto']!.isSelected = true;
+    provider.catalogStatus =
+        '2 compatible applications shown for this sample device';
     final boundaryKey = GlobalKey();
     final theme = AppTheme.light;
     await tester.pumpWidget(
@@ -181,7 +205,7 @@ void main() {
     }
 
     await capture('overview');
-    await tester.tap(find.text('📶 Connect via WiFi'));
+    await tester.tap(find.text('Wi-Fi ADB'));
     await tester.pumpAndSettle();
     await tester.tap(find.text("I'm Ready - Connect Device"));
     await tester.pumpAndSettle();

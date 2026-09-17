@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openpelo/models/device_model.dart';
+import 'package:openpelo/models/device_resources.dart';
 import 'package:openpelo/providers/app_provider.dart';
 import 'package:openpelo/services/adb_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class DeviceListAdb extends AdbService {
   List<DeviceModel> devices = [];
   DeviceListAdb() : super(onLog: (_, _) {});
+  @override
+  Future<DeviceResources> getDeviceResources(String serial) async =>
+      const DeviceResources();
   @override
   Future<List<DeviceModel>> getConnectedDevices() async => devices;
   @override

@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -10,18 +9,9 @@ import '../widgets/installed_app_manager_dialog.dart';
 import '../widgets/peloton_uninstaller_dialog.dart';
 import '../widgets/recessed_pane.dart';
 import '../widgets/screen_mirror_dialog.dart';
+import '../widgets/device_capabilities_tile.dart';
 import '../theme/app_theme.dart';
 import 'wireless_connect_screen.dart';
-
-const _taglines = [
-  'Your Machine, Your Apps',
-  'Free Your Workout',
-  'Unlock Your Machine',
-  'Free Your Fitness Screen',
-  'Ride Without Limits',
-];
-
-final _tagline = _taglines[Random().nextInt(_taglines.length)];
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -40,14 +30,11 @@ class HomeScreen extends StatelessWidget {
         title: Row(
           children: [
             Expanded(
-              child: Text(
-                "OpenPelo - $_tagline",
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: const Text('OpenPelo', overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(width: 12),
             Text(
-              'Version: ${provider.currentAppVersion ?? '...'}',
+              'v${provider.currentAppVersion ?? '…'}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onPrimary.withValues(alpha: 0.86),
               ),
@@ -164,11 +151,8 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
             child: Container(
-              margin: const EdgeInsets.symmetric(
-                horizontal: 8.0,
-                vertical: 8.0,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
                 color: colorScheme.onPrimary.withValues(alpha: 0.14),
                 border: Border.all(
@@ -185,7 +169,7 @@ class HomeScreen extends StatelessWidget {
                     "Tools",
                     style: TextStyle(
                       color: colorScheme.onPrimary,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -202,333 +186,427 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      // Use LayoutBuilder to decide between scrollable (mobile/small) and expanded (desktop/large)
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // If height is small (typical mobile landscape or bad resizing) or just generally mobile
-          // we prefer scrolling.
-          // However, to strictly follow "overflow on Android" request, let's just use SingleChildScrollView
-          // everywhere but try to be smart about the list height.
-
-          return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (provider.isUpdateAvailable)
-                    Card(
-                      color: colorScheme.tertiaryContainer,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.system_update,
-                          color: colorScheme.onTertiaryContainer,
+          final isDesktop = constraints.maxWidth >= 900;
+          final content = Padding(
+            padding: EdgeInsets.all(isDesktop ? 16 : 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _UpdateNotice(provider: provider),
+                if (provider.isCheckingForUpdate)
+                  const LinearProgressIndicator(minHeight: 2),
+                if (provider.isUpdateAvailable ||
+                    provider.updateCheckError != null ||
+                    provider.isCheckingForUpdate)
+                  const SizedBox(height: 10),
+                _StatusBanner(message: statusText, isError: statusIsError),
+                const SizedBox(height: 12),
+                if (isDesktop)
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 310,
+                          child: SingleChildScrollView(
+                            primary: false,
+                            child: _DeviceRail(provider: provider),
+                          ),
                         ),
-                        title: Text(
-                          'Update available: ${provider.latestAppVersion}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _CatalogAndLog(
+                            provider: provider,
+                            listHeight: 400,
+                            fitHeight: true,
+                          ),
                         ),
-                        subtitle: Text(
-                          'Current version: ${provider.currentAppVersion ?? 'unknown'}',
-                        ),
-                        trailing: TextButton(
-                          onPressed: provider.openReleasesPage,
-                          child: const Text('View Release'),
-                        ),
-                      ),
+                      ],
                     ),
-                  if (provider.updateCheckError != null)
-                    Card(
-                      color: colorScheme.errorContainer,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.warning_amber_rounded,
-                          color: colorScheme.onErrorContainer,
-                        ),
-                        title: const Text('Could not check for updates'),
-                        subtitle: Text(provider.updateCheckError!),
-                        trailing: TextButton(
-                          onPressed: provider.isCheckingForUpdate
-                              ? null
-                              : provider.checkForUpdates,
-                          child: const Text('Retry'),
-                        ),
-                      ),
-                    ),
-                  if (provider.isCheckingForUpdate)
-                    const LinearProgressIndicator(minHeight: 2),
-                  if (provider.isUpdateAvailable ||
-                      provider.updateCheckError != null ||
-                      provider.isCheckingForUpdate)
-                    const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: _StatusBanner(
-                          message: statusText,
-                          isError: statusIsError,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.end,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            TextButton(
-                              onPressed: () async {
-                                final steps = await provider.loadGuide(
-                                  'usb_debug_steps.json',
-                                );
-                                if (context.mounted) {
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => GuideDialog(
-                                      title: "Developer Mode Guide",
-                                      steps: steps,
-                                    ),
-                                  );
-                                }
-                              },
-                              style: TextButton.styleFrom(
-                                backgroundColor: colorScheme.secondaryContainer,
-                                foregroundColor:
-                                    colorScheme.onSecondaryContainer,
-                                minimumSize: const Size(0, 42),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                              ),
-                              child: const Text("Developer Mode Guide"),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const WirelessConnectScreen(),
-                                  ),
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                backgroundColor: colorScheme.tertiaryContainer,
-                                foregroundColor:
-                                    colorScheme.onTertiaryContainer,
-                                minimumSize: const Size(0, 42),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                              ),
-                              child: const Text("📶 Connect via WiFi"),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (provider.isBusy)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 10.0),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (provider.devices.isNotEmpty)
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(provider.selectedDevice?.serial),
-                      initialValue: provider.selectedDevice?.serial,
-                      decoration: const InputDecoration(
-                        labelText: "Target Device",
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 0,
-                        ),
-                      ),
-                      items: provider.devices.map((d) {
-                        return DropdownMenuItem(
-                          value: d.serial,
-                          child: Text(d.displayName),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          final dev = provider.devices.firstWhere(
-                            (d) => d.serial == val,
-                          );
-                          provider.selectDevice(dev);
-                        }
-                      },
-                    ),
-
-                  const SizedBox(height: 10),
-
-                  const _SectionHeader(
-                    icon: Icons.terminal,
-                    label: "ADB Messages",
-                  ),
-                  const SizedBox(height: 6),
-                  const SizedBox(height: 150, child: LogPanel()),
-
-                  const SizedBox(height: 10),
-
-                  const _SectionHeader(
-                    icon: Icons.apps,
-                    label: "Available Apps",
-                  ),
-                  const SizedBox(height: 6),
-
-                  // Use a fixed height container for the list so the page scrolls if needed
-                  const SizedBox(
-                    height: 300,
-                    child: RecessedPane(child: AppListWidget()),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // Action Buttons
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed:
-                            (!provider.isBusy &&
-                                provider.selectedDevice != null)
-                            ? () => provider.installSelectedApps(
-                                (appName) =>
-                                    _showReinstallDialog(context, appName),
-                              )
-                            : null,
-                        icon: const Icon(Icons.download),
-                        label: const Text("Install Selected Apps"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed:
-                            (!provider.isBusy &&
-                                provider.selectedDevice != null)
-                            ? () => provider.installLocalApk(
-                                (appName) =>
-                                    _showReinstallDialog(context, appName),
-                              )
-                            : null,
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text("Install Local APK"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colorScheme.secondary,
-                          foregroundColor: colorScheme.onSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const Divider(height: 30),
-
-                  const _SectionHeader(
-                    icon: Icons.perm_media_outlined,
-                    label: "Downloads & Media",
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Text("Save folder: "),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerLowest,
-                            border: Border.all(color: colorScheme.outline),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Tooltip(
-                            message: provider.saveLocation,
-                            child: Text(
-                              provider.saveLocation,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.folder),
-                        onPressed: () => provider.openSaveLocation(),
-                        tooltip: "Open Folder",
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: provider.chooseSaveLocation,
-                        tooltip: "Change Location",
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  Wrap(
-                    spacing: 10,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed:
-                            (!provider.isBusy &&
-                                provider.selectedDevice != null)
-                            ? provider.takeScreenshot
-                            : null,
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text("Take Screenshot"),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed:
-                            (!provider.isBusy &&
-                                provider.selectedDevice != null)
-                            ? () {
-                                showDialog(
-                                  context: context,
-                                  builder: (_) => const ScreenMirrorDialog(),
-                                );
-                              }
-                            : null,
-                        icon: const Icon(Icons.monitor),
-                        label: const Text("View Screen"),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed:
-                            (!provider.isBusy &&
-                                provider.selectedDevice != null)
-                            ? provider.toggleRecording
-                            : null,
-                        icon: Icon(
-                          provider.isRecording ? Icons.stop : Icons.videocam,
-                        ),
-                        label: Text(
-                          provider.isRecording ? "Stop Rec" : "Record",
-                        ),
-                        style: provider.isRecording
-                            ? OutlinedButton.styleFrom(
-                                backgroundColor: colorScheme.errorContainer,
-                                foregroundColor: colorScheme.onErrorContainer,
-                              )
-                            : null,
-                      ),
-                    ],
-                  ),
+                  )
+                else ...[
+                  _DeviceRail(provider: provider),
+                  const SizedBox(height: 16),
+                  _CatalogAndLog(provider: provider, listHeight: 300),
                 ],
-              ),
+              ],
             ),
           );
+          return isDesktop ? content : SingleChildScrollView(child: content);
         },
       ),
+    );
+  }
+}
+
+class _UpdateNotice extends StatelessWidget {
+  final AppProvider provider;
+
+  const _UpdateNotice({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (provider.isUpdateAvailable) {
+      return Card(
+        color: colorScheme.tertiaryContainer,
+        child: ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.system_update,
+            color: colorScheme.onTertiaryContainer,
+          ),
+          title: Text(
+            'Update available: ${provider.latestAppVersion}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            'Current version: ${provider.currentAppVersion ?? 'unknown'}',
+          ),
+          trailing: TextButton(
+            onPressed: provider.openReleasesPage,
+            child: const Text('View release'),
+          ),
+        ),
+      );
+    }
+    if (provider.updateCheckError != null) {
+      return Card(
+        color: colorScheme.errorContainer,
+        child: ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.warning_amber_rounded,
+            color: colorScheme.onErrorContainer,
+          ),
+          title: const Text('Could not check for updates'),
+          subtitle: Text(provider.updateCheckError!),
+          trailing: TextButton(
+            onPressed: provider.isCheckingForUpdate
+                ? null
+                : provider.checkForUpdates,
+            child: const Text('Retry'),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+class _DeviceRail extends StatelessWidget {
+  final AppProvider provider;
+
+  const _DeviceRail({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasDevice = provider.selectedDevice != null;
+    final canUseDevice = hasDevice && !provider.isBusy;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeader(
+          icon: Icons.devices_outlined,
+          label: 'Connected device',
+        ),
+        const SizedBox(height: 6),
+        if (provider.devices.isNotEmpty)
+          DropdownButtonFormField<String>(
+            key: ValueKey(provider.selectedDevice?.serial),
+            initialValue: provider.selectedDevice?.serial,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Target device',
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            items: provider.devices
+                .map(
+                  (device) => DropdownMenuItem(
+                    value: device.serial,
+                    child: Text(
+                      device.displayName,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: provider.isBusy
+                ? null
+                : (serial) {
+                    if (serial == null) return;
+                    provider.selectDevice(
+                      provider.devices.firstWhere(
+                        (device) => device.serial == serial,
+                      ),
+                    );
+                  },
+          )
+        else
+          Text(
+            'No ADB devices detected.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        const SizedBox(height: 8),
+        DeviceCapabilitiesTile(
+          device: provider.selectedDevice,
+          resources: provider.selectedDeviceResources,
+          refreshing: provider.isRefreshingDeviceResources,
+          onRefresh: provider.isBusy || provider.isRefreshingDeviceResources
+              ? null
+              : () => provider.refreshDeviceResources(force: true),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () async {
+                final steps = await provider.loadGuide('usb_debug_steps.json');
+                if (!context.mounted) return;
+                showDialog(
+                  context: context,
+                  builder: (_) =>
+                      GuideDialog(title: 'Developer Mode Guide', steps: steps),
+                );
+              },
+              icon: const Icon(Icons.help_outline, size: 18),
+              label: const Text('Setup guide'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const WirelessConnectScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.wifi_outlined, size: 18),
+              label: const Text('Wi-Fi ADB'),
+            ),
+          ],
+        ),
+        const Divider(height: 28),
+        const _SectionHeader(icon: Icons.perm_media_outlined, label: 'Media'),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: Tooltip(
+                message: provider.saveLocation,
+                child: Text(
+                  provider.saveLocation,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.folder_outlined),
+              onPressed: provider.openSaveLocation,
+              tooltip: 'Open save folder',
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: provider.chooseSaveLocation,
+              tooltip: 'Change save folder',
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: canUseDevice ? provider.takeScreenshot : null,
+              icon: const Icon(Icons.camera_alt_outlined, size: 18),
+              label: const Text('Screenshot'),
+            ),
+            OutlinedButton.icon(
+              onPressed: canUseDevice
+                  ? () => showDialog(
+                      context: context,
+                      builder: (_) => const ScreenMirrorDialog(),
+                    )
+                  : null,
+              icon: const Icon(Icons.desktop_windows_outlined, size: 18),
+              label: const Text('View'),
+            ),
+            OutlinedButton.icon(
+              onPressed: canUseDevice ? provider.toggleRecording : null,
+              icon: Icon(
+                provider.isRecording ? Icons.stop : Icons.videocam_outlined,
+                size: 18,
+              ),
+              label: Text(provider.isRecording ? 'Stop' : 'Record'),
+              style: provider.isRecording
+                  ? OutlinedButton.styleFrom(
+                      backgroundColor: colorScheme.errorContainer,
+                      foregroundColor: colorScheme.onErrorContainer,
+                    )
+                  : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CatalogAndLog extends StatelessWidget {
+  final AppProvider provider;
+  final double listHeight;
+  final bool fitHeight;
+
+  const _CatalogAndLog({
+    required this.provider,
+    required this.listHeight,
+    this.fitHeight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final canInstall = provider.selectedDevice != null && !provider.isBusy;
+    final appList = RecessedPane(
+      child: AppListWidget(
+        onInstallRecommended: canInstall
+            ? () => provider.installRecommendedApps(
+                (appName) => _showReinstallDialog(context, appName),
+              )
+            : null,
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // In short windows or with large accessibility text, keep controls
+        // reachable by scrolling instead of shrinking panels to nothing.
+        final minimumHeight =
+            420 * MediaQuery.textScalerOf(context).scale(14) / 14;
+        final fitted = fitHeight && constraints.maxHeight >= minimumHeight;
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: _SectionHeader(
+                    icon: Icons.apps_outlined,
+                    label: 'Compatible applications',
+                  ),
+                ),
+                IconButton(
+                  icon: provider.isCheckingCatalog
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  onPressed:
+                      provider.selectedDevice == null ||
+                          provider.isCheckingCatalog
+                      ? null
+                      : provider.refreshCatalog,
+                  tooltip: 'Refresh compatibility catalog',
+                ),
+              ],
+            ),
+            if (provider.catalogStatus != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                provider.catalogStatus!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
+            if (fitted)
+              Expanded(flex: 3, child: appList)
+            else
+              SizedBox(height: listHeight, child: appList),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: canInstall && provider.selectedAppCount > 0
+                      ? () => provider.installSelectedApps(
+                          (appName) => _showReinstallDialog(context, appName),
+                        )
+                      : null,
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: Text(
+                    'Install selected (${provider.selectedAppCount})',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: canInstall
+                      ? () => provider.installLocalApk(
+                          (appName) => _showReinstallDialog(context, appName),
+                        )
+                      : null,
+                  icon: const Icon(Icons.folder_open_outlined, size: 18),
+                  label: const Text('Install local APK'),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            Row(
+              children: [
+                const Expanded(
+                  child: _SectionHeader(
+                    icon: Icons.terminal_outlined,
+                    label: 'ADB activity',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed:
+                      provider.logs.isEmpty || provider.isExportingAdbActivity
+                      ? null
+                      : () async {
+                          final saved = await provider.exportAdbActivity();
+                          if (!context.mounted || saved == null) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('ADB activity saved to $saved'),
+                            ),
+                          );
+                        },
+                  icon: const Icon(Icons.save_alt, size: 18),
+                  label: Text(
+                    provider.isExportingAdbActivity ? 'Exporting…' : 'Export',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (fitted)
+              const Expanded(flex: 2, child: LogPanel())
+            else
+              const SizedBox(height: 170, child: LogPanel()),
+          ],
+        );
+        return fitHeight && !fitted
+            ? SingleChildScrollView(primary: false, child: content)
+            : content;
+      },
     );
   }
 }
@@ -592,11 +670,13 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: colorScheme.primary),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],

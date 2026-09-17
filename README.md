@@ -23,7 +23,7 @@ with other Android tablets, phones, and TVs.
 | App installation | Choose from a catalog tailored to your device or install an APK (Android app file) from your computer. |
 | Installed App Manager | Find, open, stop, reset, or uninstall apps, and save a list of what's installed. |
 | File Manager | Browse device storage, transfer files, and organize files and folders. |
-| Remote screen and media | Control the device through a screen preview, save PNG screenshots, and record MP4 videos. |
+| Remote screen and media | Use an embedded live screen viewer on desktop, save PNG screenshots, and record video-only MP4 files. |
 | Device tools | Choose a default launcher, rotate the screen, apply developer settings, and access Peloton-specific tools. |
 | Ready to use | Includes the connection tools you need, with no separate ADB installation. |
 
@@ -37,6 +37,11 @@ Download the version for your computer from the
 - Linux: `OpenPelo-Linux.tar.gz`
 
 OpenPelo sets up its connection tools automatically the first time you open it.
+Linux releases link to the distribution's `libmpv` and `libepoxy` libraries.
+Install the matching runtime packages before launching OpenPelo; missing shared
+libraries can prevent the application itself from starting. For Ubuntu 24.04,
+install `libmpv2` and `libepoxy0` (package names vary by distribution/release).
+The archive does not bundle those system libraries.
 
 ## Connect a device
 
@@ -102,21 +107,61 @@ progress and details if something goes wrong. Scroll back to read earlier
 messages; the down-arrow control returns to the latest activity. **Refresh
 Devices** checks the connection again and refreshes the compatible app list.
 
+Click **Export** beside **ADB activity** to save the currently retained activity
+to a UTF-8 text file, including timestamps and message types. Choose the file
+location in the save dialog. The activity buffer holds the most recent 300
+entries. On desktop, the catalog and activity panels resize with the window;
+the device sidebar scrolls independently when needed.
+
+The device tile also reports total and available RAM, the highest hardware CPU
+clock Android exposes, and total/used/available space on the `/data` filesystem
+where apps and user data live. RAM is the memory available to the operating
+system; `/data` capacity excludes other system partitions. Clock is a reported
+maximum, not a live frequency. Missing readings show **Not reported**. Details
+refresh about every 30 seconds while idle, or immediately using the tile's
+refresh button, without rechecking the app catalog.
+
 ### 2. Install apps
 
-1. Connect and select a device to populate **Available Apps**.
-2. Read the descriptions and check the apps you want. Scroll inside the catalog
-   to see more entries.
-3. Click **Install Selected Apps**. OpenPelo downloads and installs the selected
-   apps; follow **ADB Messages** for progress and results.
-4. To install an APK you already have, click **Install Local APK** and choose
+1. Connect and select a device to populate **Compatible applications**. The
+   device tile shows its Android version, API level, CPU information, RAM,
+   maximum CPU clock, and storage usage.
+2. Choose a **Category**, read the descriptions, and check the apps you want.
+   Selections remain checked when you change categories. **All apps** shows the
+   full compatible catalog.
+3. Click **Install selected**. OpenPelo downloads and installs the selected
+   apps; follow **ADB activity** for progress and results.
+4. To install an APK you already have, click **Install local APK** and choose
    the `.apk` file on your computer.
+
+**Recommended** opens by default and includes SmartSpin2k, Grupetto, Material
+Files, Lawnchair, Aurora Store, and Moonlight when compatible and available.
+**Install all recommended** installs the apps shown in that category, without
+including other checked apps or changing your selections. Only one Lawnchair
+version is recommended: the current catalog build when compatible, otherwise
+the available legacy build. Other categories are Fitness, Launchers, App stores,
+Browsers, Files, and Media & streaming.
 
 The bundled catalog includes fitness utilities such as SmartSpin2k and Grupetto,
 launchers such as Lawnchair, app stores, browsers, file managers, and media or
-streaming clients. OpenPelo adjusts the list for your device, with older app
-versions available for older hardware. Some apps may still require a newer
-version of Android.
+streaming clients. Entries are not assigned to CPU categories. OpenPelo reads
+each APK's minimum Android API and native-library architectures, and lists only
+verified files compatible with the selected device. APKs without native libraries
+are architecture independent. A 32-bit APK is offered on a 64-bit device only
+when Android reports support for its 32-bit ABI. Selecting another device updates
+the list.
+
+Catalog checks use bounded HTTP byte ranges to read ZIP metadata and the manifest,
+without downloading the full APK collection. Results are cached locally for 24
+hours; an hourly check while OpenPelo is running refreshes expired entries and
+retries failed sources. The catalog's refresh button checks immediately. Latest
+release links are resolved again when their cached result expires. Missing files,
+hosts that cannot serve bounded ranges, and unsupported APK formats are excluded
+and explained in **ADB activity**. This is a compatibility check, not a guarantee
+that a vendor's installation policy will permit the app.
+
+The downloaded APK is checked again before installation, including local APKs.
+The original signing identity is preserved; no APK is repackaged or re-signed.
 
 If Android reports a **Signature Mismatch**, OpenPelo offers **Uninstall &
 Reinstall**. That removes the existing app and its local data before reinstalling.
@@ -164,18 +209,31 @@ be located with **Open containing folder**.
 
 ### 5. View, control, and capture the device screen
 
-The home screen's **Downloads & Media** section groups the save folder and
-capture controls. Scroll down if it is below the visible area of the window.
+The home screen's **Media** section groups the save folder and capture
+controls. On supported desktop platforms, **View** opens a live H.264 screen
+viewer using the bundled scrcpy server. OpenPelo does not capture system audio
+or microphone audio in this first version.
 
 | Control | Walkthrough |
 | --- | --- |
 | **Save folder** | Use **Change Location** to choose the computer folder used for media, file downloads, and app-list exports. **Open Folder** opens it in your file browser. |
-| **Take Screenshot** | Save a picture of the device's display to your save folder. The PNG filename includes the date and time. |
-| **View Screen** | Open **Remote Screen View**. Click the preview to tap the device; drag, use the mouse wheel, or press arrow keys to scroll. Use **Back**, **Home**, and **Recents** just as you would on the device. |
-| **Record / Stop Rec** | Click **Record** to start recording the device screen. Click **Stop Rec** to finish and save an MP4 video to your save folder. Keep the device connected while saving. |
+| **Screenshot** | Save a PNG picture of the device display to the save folder. The filename includes the date and time. |
+| **View** | Open the live remote-screen viewer. It is configured for 1280 pixels at 30 fps by default; use Tutorial mode for 1920 pixels at 30 fps when the device and connection can sustain it. |
+| **Record MP4 / Stop** (inside View) | Save the live H.264 stream as a video-only MP4 file in the save folder. Keep the device connected until recording stops. |
+| **Record** (on the home screen) | Use the original Android screen-recording method without opening the viewer. Stop this recording before opening the live viewer. |
 
-The screen preview updates periodically, so movement won't look as smooth as
-it does on the device itself.
+OpenPelo falls back to a screenshot-based preview when live viewing is not
+available, including unsupported platforms or devices that reject the server.
+
+For tutorials, open **View**, choose **Tutorial**, then **Record MP4**. The preset
+caps the longest edge at 1920 pixels and the frame rate at 30 fps; actual output
+depends on the device. Click, drag, scroll, and type inside the viewer to control
+the Peloton, or use its Back, Home, and Recents buttons. Recordings contain the
+device screen, without OpenPelo's controls. Add narration in your video editor.
+Rotation or an encoder-format change ends the current recording and saves its
+valid portion; start another recording after the screen settles. Closing the
+viewer or the application's window finalizes the recording. A forced termination
+or power loss can leave an unfinished `.partial` file.
 
 ### 6. Configure the launcher and device tools
 
@@ -208,6 +266,7 @@ Open **Tools** in the upper-right corner for these additional controls:
 | No device or empty catalog | Enable USB debugging, use a data-capable cable, accept the device's authorization prompt, click **Refresh Devices**, and select **Target Device**. |
 | Wireless pairing fails | Check the current six-digit code and pairing port in the device's pairing dialog. The connection port comes from the main Wireless debugging screen. |
 | Scan finds nothing | Check that both devices are on the same network and wireless debugging is enabled. Try entering the address and ports manually. |
+| Wi-Fi connection fails on macOS | Allow OpenPelo under **System Settings → Privacy & Security → Local Network**, then retry. The permission covers device discovery, Wi-Fi ADB, and remote viewing. |
 | A remembered WiFi device stops reconnecting | Make sure it's on the same network as your computer, then try **Connect via WiFi** or **Pair using USB** again. |
 | An APK will not install | Check **ADB Messages** for the reason. Make sure the app supports your device and Android version. If you see **Signature Mismatch**, read the reinstall prompt before continuing. |
 | A file or setting cannot be accessed | Some system folders and settings are protected by Android. Check **ADB Messages** for details. |
@@ -228,3 +287,5 @@ risk.
 ## License
 
 OpenPelo is available under the [MIT License](./LICENSE).
+Third-party attribution and the pinned bundled-server checksum are in
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

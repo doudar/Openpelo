@@ -14,11 +14,15 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/adb_service.dart';
 import '../services/wireless_connection_manager.dart';
 import '../services/config_service.dart';
+import '../services/catalog_service.dart';
+import '../services/app_categories.dart' as categories;
+import '../services/scrcpy_service.dart';
 import '../services/device_file_parser.dart';
 import '../services/release_asset_selector.dart';
 import '../models/app_model.dart';
 import '../models/device_file_model.dart';
 import '../models/device_model.dart';
+import '../models/device_resources.dart';
 import '../models/installed_app_model.dart';
 import 'package:intl/intl.dart';
 
@@ -35,7 +39,15 @@ class AppProvider with ChangeNotifier {
   );
 
   final AdbService _adbService;
-  final ConfigService _configService = ConfigService();
+  final ConfigService _configService;
+  final CatalogService _catalogService;
+  int _catalogGeneration = 0;
+  Timer? _catalogTimer;
+  bool isCheckingCatalog = false;
+  String? catalogStatus;
+  Map<String, String> catalogUnavailable = {};
+  DeviceModel? _catalogTarget;
+  final Set<String> _catalogSelections = {};
   static final Uri _openpeloLatestReleaseApiUri = Uri.https(
     'api.github.com',
     '/repos/doudar/openpelo/releases/latest',
@@ -49,9 +61,48 @@ class AppProvider with ChangeNotifier {
   };
 
   List<LogEntry> logs = [];
+  bool isExportingAdbActivity = false;
   List<DeviceModel> devices = [];
   Map<String, AppModel> availableApps = {};
+  String _selectedAppCategory = 'Recommended';
+
+  List<String> get appCategories => [
+    'Recommended',
+    'All apps',
+    ...({for (final app in availableApps.values) app.category}.toList()
+      ..sort()),
+  ];
+
+  String get selectedAppCategory => appCategories.contains(_selectedAppCategory)
+      ? _selectedAppCategory
+      : 'Recommended';
+
+  List<AppModel> get recommendedApps =>
+      categories.recommendedApps(availableApps.values);
+
+  List<AppModel> get visibleApps {
+    final category = selectedAppCategory;
+    if (category == 'Recommended') return recommendedApps;
+    return availableApps.values
+        .where((app) => category == 'All apps' || app.category == category)
+        .toList();
+  }
+
+  int get selectedAppCount =>
+      availableApps.values.where((app) => app.isSelected).length;
+
+  void setAppCategory(String category) {
+    if (!appCategories.contains(category)) return;
+    _selectedAppCategory = category;
+    notifyListeners();
+  }
+
   DeviceModel? selectedDevice;
+  DeviceResources selectedDeviceResources = const DeviceResources();
+  bool isRefreshingDeviceResources = false;
+  String? _resourcesDeviceKey;
+  DateTime? _resourcesCheckedAt;
+  int _resourcesGeneration = 0;
   String statusMessage = "Checking device connection...";
   bool _operationBusy = false;
   bool _maintainingWireless = false;
@@ -63,6 +114,7 @@ class AppProvider with ChangeNotifier {
   bool _isCheckingDevices = false;
   Process? _recordingProcess;
   bool isRecording = false;
+  bool _screenStreamActive = false;
   String? _saveLocation;
   bool _askEachDownload = false;
   bool isCheckingForUpdate = false;
@@ -71,8 +123,13 @@ class AppProvider with ChangeNotifier {
   Uri latestReleasePageUrl = _openpeloReleasesPageUri;
   String? updateCheckError;
 
-  AppProvider({AdbService? adbService})
-    : _adbService = adbService ?? AdbService(onLog: (m, t) {}) {
+  AppProvider({
+    AdbService? adbService,
+    ConfigService? configService,
+    CatalogService? catalogService,
+  }) : _adbService = adbService ?? AdbService(onLog: (m, t) {}),
+       _configService = configService ?? ConfigService(),
+       _catalogService = catalogService ?? CatalogService() {
     _wirelessConnections = WirelessConnectionManager(
       adb: _adbService,
       save: (data) async {
@@ -115,6 +172,53 @@ class AppProvider with ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// Saves the activity currently shown in the log to a UTF-8 text file.
+  /// Returns the chosen file location, or null when cancelled or unsuccessful.
+  Future<String?> exportAdbActivity() async {
+    if (_disposed || isExportingAdbActivity || logs.isEmpty) return null;
+
+    // Capture the contents before opening a dialog, while ADB can keep logging.
+    final snapshot = List<LogEntry>.of(logs);
+    final lines = snapshot
+        .map((entry) => '${entry.timestamp} [${entry.tag}] ${entry.message}')
+        .join('\n');
+    final contents = '$lines\n';
+    final fileName =
+        'openpelo_adb_activity_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.txt';
+    isExportingAdbActivity = true;
+    notifyListeners();
+
+    try {
+      final location = await saveAdbActivityFile(
+        fileName,
+        Uint8List.fromList(utf8.encode(contents)),
+      );
+      if (location == null) return null;
+      final path = location.scheme == 'file'
+          ? location.toFilePath()
+          : location.toString();
+      _onLog('ADB activity exported to $path', 'info');
+      return path;
+    } catch (error) {
+      _onLog('Failed to export ADB activity: $error', 'error');
+      return null;
+    } finally {
+      isExportingAdbActivity = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  @protected
+  Future<Uri?> saveAdbActivityFile(String fileName, Uint8List bytes) =>
+      FilePicker.saveFile(
+        dialogTitle: 'Export ADB activity',
+        fileName: fileName,
+        bytes: bytes,
+        mimeType: 'text/plain',
+        type: FileType.custom,
+        allowedExtensions: ['txt'],
+      );
 
   void _setBusy(bool value) {
     _operationBusy = value;
@@ -298,6 +402,12 @@ class AppProvider with ChangeNotifier {
         _checkDevices(silent: true);
       }
     });
+    _catalogTimer?.cancel();
+    _catalogTimer = Timer.periodic(const Duration(hours: 1), (_) {
+      if (!isBusy && !isCheckingCatalog && selectedDevice != null) {
+        _loadApps();
+      }
+    });
   }
 
   Future<void> _checkDevices({bool silent = false}) async {
@@ -306,7 +416,7 @@ class AppProvider with ChangeNotifier {
     try {
       var detected = await _adbService.getConnectedDevices();
       if (_disposed) return;
-      if (!isBusy && !isRecording) {
+      if (!isBusy && !isRecording && !_screenStreamActive) {
         if (await _wirelessConnections.maintain(detected)) {
           detected = await _adbService.getConnectedDevices();
         }
@@ -321,6 +431,9 @@ class AppProvider with ChangeNotifier {
               "❌ No device detected. Please connect your device and enable USB debugging.";
           selectedDevice = null;
           availableApps = {};
+          _catalogGeneration++;
+          isCheckingCatalog = false;
+          catalogStatus = null;
         } else {
           // Select first if none selected or previous selection gone
           if (selectedDevice == null ||
@@ -361,25 +474,130 @@ class AppProvider with ChangeNotifier {
         }
         notifyListeners();
       }
+      unawaited(refreshDeviceResources());
     } finally {
       _isCheckingDevices = false;
     }
   }
 
-  Future<void> _loadApps() async {
-    if (selectedDevice == null) return;
-    final targetSerial = selectedDevice!.serial;
-    final apps = await _configService.loadApps(selectedDevice!.abi);
-    if (_disposed || selectedDevice?.serial != targetSerial) return;
-    availableApps = apps;
+  Future<void> _loadApps({bool force = false}) async {
+    final generation = ++_catalogGeneration;
+    final target = selectedDevice;
+    if (_catalogTarget != target) _catalogSelections.clear();
+    _catalogTarget = target;
+    availableApps = {};
+    catalogUnavailable = {};
+    if (target == null || target.apiLevel == null) {
+      isCheckingCatalog = false;
+      catalogStatus = target == null
+          ? null
+          : 'Android API level unavailable. Reconnect to check compatibility.';
+      if (!_disposed) notifyListeners();
+      return;
+    }
+    isCheckingCatalog = true;
+    catalogStatus = 'Checking APK availability and compatibility…';
     notifyListeners();
+    try {
+      final sources = await _configService.loadApps();
+      final catalog = await _catalogService.refresh(
+        sources.values,
+        resolveUrl: _resolveDownloadUrl,
+        force: force,
+      );
+      if (_disposed ||
+          generation != _catalogGeneration ||
+          selectedDevice != target) {
+        return;
+      }
+      availableApps = catalog.forDevice(target);
+      final validSelections = <String>{};
+      for (final app in availableApps.values) {
+        final key = _catalogSelectionKey(app);
+        app.isSelected = _catalogSelections.contains(key);
+        if (app.isSelected) validSelections.add(key);
+      }
+      _catalogSelections.retainAll(validSelections);
+      catalogUnavailable = catalog.unavailable;
+      final incompatible = catalog.verifiedApps.length - availableApps.length;
+      catalogStatus =
+          '${availableApps.length} compatible · $incompatible incompatible'
+          ' · ${catalog.unavailable.length} unavailable or unverified. Checked daily.';
+      for (final entry in catalog.unavailable.entries) {
+        _onLog('Catalog: ${entry.key}: ${entry.value}', 'info');
+      }
+    } catch (error) {
+      if (!_disposed && generation == _catalogGeneration) {
+        catalogStatus = 'Could not check the catalog. Use Refresh to retry.';
+        _onLog('Catalog check failed: $error', 'error');
+      }
+    } finally {
+      if (!_disposed && generation == _catalogGeneration) {
+        isCheckingCatalog = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> refreshCatalog() => _loadApps(force: true);
+
+  /// Volatile resource readings are separate from device/catalog identity so
+  /// changing free RAM or disk space cannot reset the APK list or selections.
+  Future<void> refreshDeviceResources({bool force = false}) async {
+    if (_disposed) return;
+    final target = selectedDevice;
+    final key = target == null
+        ? null
+        : jsonEncode([target.serial, target.identityKey]);
+    if (_resourcesDeviceKey != key) {
+      _resourcesGeneration++;
+      _resourcesDeviceKey = key;
+      _resourcesCheckedAt = null;
+      selectedDeviceResources = const DeviceResources();
+      isRefreshingDeviceResources = false;
+      notifyListeners();
+    }
+    if (target == null || isBusy || isRefreshingDeviceResources) return;
+    final age = _resourcesCheckedAt == null
+        ? null
+        : DateTime.now().difference(_resourcesCheckedAt!);
+    if (!force &&
+        age != null &&
+        !age.isNegative &&
+        age < const Duration(seconds: 30)) {
+      return;
+    }
+    final generation = ++_resourcesGeneration;
+    _resourcesCheckedAt = DateTime.now();
+    isRefreshingDeviceResources = true;
+    notifyListeners();
+    try {
+      final resources = await _adbService.getDeviceResources(target.serial);
+      if (!_disposed &&
+          generation == _resourcesGeneration &&
+          selectedDevice?.serial == target.serial &&
+          selectedDevice?.identityKey == target.identityKey) {
+        selectedDeviceResources = resources;
+      }
+    } catch (_) {
+      if (!_disposed && generation == _resourcesGeneration) {
+        selectedDeviceResources = const DeviceResources();
+      }
+    } finally {
+      if (!_disposed && generation == _resourcesGeneration) {
+        isRefreshingDeviceResources = false;
+        notifyListeners();
+      }
+    }
   }
 
   void selectDevice(DeviceModel device) {
+    if (isBusy) return;
     selectedDevice = device;
     _selectedDeviceIdentity = device.identityKey;
     statusMessage = "✅ Connected to ${device.displayName}";
     _loadApps();
+    unawaited(refreshDeviceResources());
     notifyListeners();
   }
 
@@ -387,8 +605,21 @@ class AppProvider with ChangeNotifier {
     final app = availableApps[appName];
     if (app == null || app.isSelected == selected) return;
     app.isSelected = selected;
+    final key = _catalogSelectionKey(app);
+    if (selected) {
+      _catalogSelections.add(key);
+    } else {
+      _catalogSelections.remove(key);
+    }
     notifyListeners();
   }
+
+  String _catalogSelectionKey(AppModel app) => jsonEncode([
+    app.name,
+    app.url,
+    app.resolvedDownloadUrl,
+    app.metadata?.toJson(),
+  ]);
 
   Future<void> refresh() async {
     await _checkDevices();
@@ -415,12 +646,11 @@ class AppProvider with ChangeNotifier {
             assetPattern: app.assetPattern,
             packageId: app.packageId,
             sha256: app.sha256,
-            abi: app.abi,
           );
           return _resolveDownloadUrl(apiApp);
         }
       }
-      if (uri.host.contains('api.github.com')) {
+      if (uri.host == 'api.github.com') {
         _onLog("Resolving GitHub API URL...", 'info');
         final response = await _httpGetWithWindowsTlsFallback(
           uri,
@@ -430,7 +660,9 @@ class AppProvider with ChangeNotifier {
         if (response.statusCode == 200) {
           final json = jsonDecode(response.body);
           final List<dynamic> assets = json['assets'] ?? [];
-          if (assets.isEmpty) return url;
+          if (assets.isEmpty) {
+            throw StateError('Release contains no APK assets.');
+          }
 
           final selectedName = selectApkAssetName(
             assets.map((asset) => asset['name'].toString()),
@@ -442,6 +674,9 @@ class AppProvider with ChangeNotifier {
           );
           return selected['browser_download_url'].toString();
         }
+        throw StateError(
+          'Release lookup failed (HTTP ${response.statusCode}).',
+        );
       }
       return url;
     } catch (e) {
@@ -562,7 +797,9 @@ class AppProvider with ChangeNotifier {
     required Map<String, String> headers,
   }) async {
     try {
-      return await http.get(uri, headers: headers);
+      return await http
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 20));
     } catch (e) {
       if (Platform.isWindows && _isWindowsTlsHandshakeError(e)) {
         _onLog(
@@ -590,6 +827,8 @@ class AppProvider with ChangeNotifier {
       '--fail',
       '--max-redirs',
       '5',
+      '--max-time',
+      '30',
       '--proto',
       '=https',
       '--proto-redir',
@@ -681,6 +920,7 @@ class AppProvider with ChangeNotifier {
     required String? packageHint,
     required Future<bool> Function(String appName) onConfirmReinstall,
     required Future<String> Function() retryInstall,
+    required String deviceSerial,
   }) async {
     if (!output.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
       return output;
@@ -690,7 +930,7 @@ class AppProvider with ChangeNotifier {
       output,
       packageHint,
     );
-    if (conflictingPkg == null || selectedDevice == null) {
+    if (conflictingPkg == null || selectedDevice?.serial != deviceSerial) {
       return output;
     }
 
@@ -700,50 +940,69 @@ class AppProvider with ChangeNotifier {
     }
 
     _onLog("Uninstalling old version of $appName...", 'info');
-    await _adbService.uninstallPackage(selectedDevice!.serial, conflictingPkg);
+    final uninstall = await _adbService.uninstallPackage(
+      deviceSerial,
+      conflictingPkg,
+    );
+    if (!uninstall.contains('Success')) {
+      return '$output\nUninstall failed: $uninstall';
+    }
     _onLog("Retrying install of $appName...", 'info');
     return retryInstall();
   }
 
   Future<void> installSelectedApps(
     Future<bool> Function(String appName) onConfirmReinstall,
+  ) => installCatalogApps(
+    availableApps.values.where((app) => app.isSelected).toList(),
+    onConfirmReinstall,
+  );
+
+  Future<void> installRecommendedApps(
+    Future<bool> Function(String appName) onConfirmReinstall,
+  ) => installCatalogApps(recommendedApps, onConfirmReinstall);
+
+  /// Both install actions use the same checks and capture a fixed batch.
+  @protected
+  Future<void> installCatalogApps(
+    List<AppModel> apps,
+    Future<bool> Function(String appName) onConfirmReinstall,
   ) async {
-    if (selectedDevice == null) return;
-    final appsToInstall = availableApps.values
-        .where((a) => a.isSelected)
-        .toList();
+    final target = selectedDevice;
+    if (_disposed || target == null || isBusy) return;
+    final appsToInstall = List<AppModel>.of(apps);
     if (appsToInstall.isEmpty) return;
 
     _setBusy(true);
 
     try {
       for (final app in appsToInstall) {
-        final downloadUrl = await _resolveDownloadUrl(app);
+        final downloadUrl =
+            app.resolvedDownloadUrl ?? await _resolveDownloadUrl(app);
 
         final downloadUri = Uri.parse(downloadUrl);
         _onLog("Downloading ${app.name} from $downloadUrl...", 'info');
         final tempDir = await getTemporaryDirectory();
         // Ensure unique name or use package name to avoid conflicts/caching if needed
-        final filename =
-            app.assetName ?? "${app.name.replaceAll(' ', '_')}.apk";
+        final filename = p.basename(
+          app.assetName ?? "${app.name.replaceAll(' ', '_')}.apk",
+        );
         final apkPath = p.join(tempDir.path, filename);
         final file = File(apkPath);
         final ok = await _downloadToFile(downloadUri, file);
         final isValid = ok && await _validateDownloadedApk(file, app.sha256);
         if (isValid) {
+          if (!await _checkApkForDevice(file, target)) continue;
           _onLog("Installing ${app.name}...", 'info');
-          String output = await _adbService.installApk(
-            selectedDevice!.serial,
-            apkPath,
-          );
+          String output = await _adbService.installApk(target.serial, apkPath);
 
           output = await _resolveInstallConflictIfNeeded(
             output: output,
             appName: app.name,
             packageHint: app.packageId,
+            deviceSerial: target.serial,
             onConfirmReinstall: onConfirmReinstall,
-            retryInstall: () =>
-                _adbService.installApk(selectedDevice!.serial, apkPath),
+            retryInstall: () => _adbService.installApk(target.serial, apkPath),
           );
 
           if (output.contains('Success')) {
@@ -765,7 +1024,8 @@ class AppProvider with ChangeNotifier {
   Future<void> installLocalApk(
     Future<bool> Function(String appName) onConfirmReinstall,
   ) async {
-    if (selectedDevice == null) return;
+    final target = selectedDevice;
+    if (target == null || isBusy) return;
 
     String? path;
     try {
@@ -791,22 +1051,21 @@ class AppProvider with ChangeNotifier {
     }
 
     final apkPath = path;
+    if (selectedDevice != target || isBusy) return;
     _setBusy(true);
     try {
       final filename = p.basename(apkPath);
+      if (!await _checkApkForDevice(File(apkPath), target)) return;
       _onLog("Installing local APK: $filename", 'info');
-      String output = await _adbService.installApk(
-        selectedDevice!.serial,
-        apkPath,
-      );
+      String output = await _adbService.installApk(target.serial, apkPath);
 
       output = await _resolveInstallConflictIfNeeded(
         output: output,
         appName: filename,
         packageHint: null,
+        deviceSerial: target.serial,
         onConfirmReinstall: onConfirmReinstall,
-        retryInstall: () =>
-            _adbService.installApk(selectedDevice!.serial, apkPath),
+        retryInstall: () => _adbService.installApk(target.serial, apkPath),
       );
 
       if (output.contains('Success')) {
@@ -818,6 +1077,45 @@ class AppProvider with ChangeNotifier {
       _onLog("Failed install: $e", 'error');
     } finally {
       _setBusy(false);
+    }
+  }
+
+  Future<bool> _checkApkForDevice(File file, DeviceModel target) async {
+    if (selectedDevice != target) {
+      _onLog('Selected device changed. Installation canceled.', 'error');
+      return false;
+    }
+    final api = target.apiLevel;
+    if (api == null) {
+      _onLog(
+        'Cannot check Android compatibility: device API level is unknown. Reconnect the device.',
+        'error',
+      );
+      return false;
+    }
+    try {
+      final metadata = await _catalogService.probeService.inspectFile(file);
+      final abis = target.supportedAbis.isNotEmpty
+          ? target.supportedAbis
+          : [if (target.abi != null) target.abi!];
+      if (metadata.minSdk > api) {
+        _onLog(
+          'APK requires Android API ${metadata.minSdk}; selected device has API $api.',
+          'error',
+        );
+        return false;
+      }
+      if (!metadata.supportsDevice(api, abis)) {
+        _onLog(
+          'APK CPU architectures (${metadata.nativeAbis.join(', ')}) do not match the device (${abis.isEmpty ? 'unknown' : abis.join(', ')}).',
+          'error',
+        );
+        return false;
+      }
+      return selectedDevice == target;
+    } catch (error) {
+      _onLog('Could not verify APK compatibility: $error', 'error');
+      return false;
     }
   }
 
@@ -900,6 +1198,42 @@ class AppProvider with ChangeNotifier {
   Future<Uint8List?> getScreenShotBytes() async {
     if (selectedDevice == null) return null;
     return await _adbService.getScreenShotBytes(selectedDevice!.serial);
+  }
+
+  ScrcpyService createScreenStream({
+    required int maxSize,
+    required int bitRate,
+  }) {
+    final target = selectedDevice;
+    if (_disposed || target == null) throw StateError('No device selected.');
+    if (isRecording) {
+      throw StateError(
+        'Stop the basic recording before opening fast streaming.',
+      );
+    }
+    return ScrcpyService(
+      adbService: _adbService,
+      serial: target.serial,
+      maxSize: maxSize,
+      maxFps: 30,
+      videoBitRate: bitRate,
+    );
+  }
+
+  void setScreenStreamActive(bool active) {
+    _screenStreamActive = active;
+  }
+
+  void logScreenActivity(String message, [String tag = 'info']) =>
+      _onLog(message, tag);
+
+  Future<String> nextScreenRecordingPath() async {
+    final directory = saveLocation.isEmpty
+        ? await _defaultSaveLocation()
+        : saveLocation;
+    await Directory(directory).create(recursive: true);
+    final date = DateFormat('yyyyMMdd_HHmmss_SSS').format(DateTime.now());
+    return _uniqueLocalPath(p.join(directory, 'peloton_tutorial_$date.mp4'));
   }
 
   Future<bool> tapScreen(int x, int y) async {
@@ -1546,6 +1880,10 @@ class AppProvider with ChangeNotifier {
     _wirelessConnections.dispose();
     _heartbeatTimer?.cancel();
     _recordingProcess?.kill();
+    _catalogTimer?.cancel();
+    _catalogGeneration++;
+    _resourcesGeneration++;
+    _catalogService.probeService.close();
     super.dispose();
   }
 }

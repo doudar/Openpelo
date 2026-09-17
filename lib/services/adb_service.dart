@@ -10,9 +10,11 @@ import 'package:flutter_adb/flutter_adb.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import '../models/device_model.dart';
+import '../models/device_resources.dart';
 import '../models/device_file_model.dart';
 import '../models/installed_app_model.dart';
 import 'device_file_parser.dart';
+import 'device_resources_parser.dart';
 
 class AdbService {
   static const bundledPlatformToolsRevision = '37.0.1';
@@ -23,6 +25,12 @@ class AdbService {
   // Mobile Adb Client state
   String? _connectedIp;
   int _connectedPort = 5555;
+
+  // Device properties are small and stable for the lifetime of an ADB
+  // connection. Keeping them here avoids issuing several getprop commands on
+  // every five-second device heartbeat. Entries are removed when a device
+  // disappears from adb's device list, so a later reconnect gets fresh data.
+  final Map<String, Map<String, String>> _devicePropertiesCache = {};
 
   AdbService({required this.onLog, String? executablePath})
     : _adbPath = executablePath;
@@ -131,6 +139,7 @@ class AdbService {
     List<String> args, {
     bool allowFailure = false,
     Duration? timeout,
+    bool logOutput = true,
   }) async {
     if (isMobile) {
       // Mobile stub for unsupported methods called via raw runAdb
@@ -145,17 +154,19 @@ class AdbService {
     if (_adbPath == null) await init();
     if (_adbPath == null) throw Exception("ADB not found");
 
-    onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
+    if (logOutput) {
+      onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
+    }
     try {
       final result = timeout == null
           ? await Process.run(_adbPath!, args)
           : await _runTimedCommand(args, timeout);
-      if (result.stdout.toString().isNotEmpty) {
+      if (logOutput && result.stdout.toString().isNotEmpty) {
         // Filter out empty lines
         final lines = result.stdout.toString().trim();
         if (lines.isNotEmpty) onLog(lines, 'stdout');
       }
-      if (result.stderr.toString().isNotEmpty) {
+      if (logOutput && result.stderr.toString().isNotEmpty) {
         onLog(result.stderr.toString().trim(), 'stderr');
       }
       if (result.exitCode != 0 && !allowFailure) {
@@ -166,6 +177,18 @@ class AdbService {
       onLog("Command failed: $e", 'error');
       rethrow;
     }
+  }
+
+  /// Starts a long-lived desktop ADB client using the same bundled executable
+  /// as [runAdbCommand]. The caller owns the returned process and its output.
+  Future<Process> startAdbProcess(List<String> args) async {
+    if (isMobile) {
+      throw UnsupportedError('Streaming ADB processes require desktop ADB.');
+    }
+    if (_adbPath == null) await init();
+    if (_adbPath == null) throw StateError('ADB not found');
+    onLog("\$ adb ${_argsForLog(args).join(' ')}", 'command');
+    return Process.start(_adbPath!, args);
   }
 
   Future<ProcessResult> _runTimedCommand(
@@ -205,23 +228,39 @@ class AdbService {
             port: _connectedPort,
           );
           if (out.isNotEmpty) {
-            String? name = await getDeviceName(_connectedIp!);
-            String? abi = await getDeviceAbi(_connectedIp!);
+            final serial = "$_connectedIp:$_connectedPort";
+            final properties = await _getDeviceProperties(serial);
+            final abis = _supportedAbis(properties);
+            final abi = abis.isEmpty
+                ? _value(properties, 'ro.product.cpu.abi')
+                : abis.first;
+            final manufacturer = _value(properties, 'ro.product.manufacturer');
+            final hardwareSerial = _value(properties, 'ro.serialno');
             return [
               DeviceModel(
-                serial: "$_connectedIp:$_connectedPort",
+                serial: serial,
                 status: "device",
                 transport: 'wifi',
                 ip: _connectedIp,
                 port: _connectedPort.toString(),
-                name: name,
+                name: _deviceName(properties) ?? serial,
                 abi: abi,
+                supportedAbis: abis,
+                apiLevel: _apiLevel(properties),
+                androidVersion: _value(properties, 'ro.build.version.release'),
+                cpuDescription: _value(properties, 'ro.hardware'),
+                hardwareSerial: hardwareSerial,
+                manufacturer: manufacturer,
               ),
             ];
           }
+          // An empty successful probe is not a connected device response.
+          _connectedIp = null;
+          _devicePropertiesCache.clear();
         } catch (e) {
           // Lost connection
           _connectedIp = null;
+          _devicePropertiesCache.clear();
         }
       }
       return [];
@@ -236,6 +275,7 @@ class AdbService {
           .toList();
 
       List<DeviceModel> devices = [];
+      final connectedSerials = <String>{};
       // Skip first line "List of devices attached"
       for (var i = 1; i < lines.length; i++) {
         final line = lines[i].trim();
@@ -247,6 +287,7 @@ class AdbService {
         final status = entry.$2;
 
         if (status != 'device') continue;
+        connectedSerials.add(serial);
 
         String transport = serial.contains('._adb-tls-connect._tcp')
             ? 'wifi'
@@ -261,10 +302,21 @@ class AdbService {
           port = hostParts.length > 1 ? hostParts[1] : null;
         }
 
-        // Get Name
-        String? name = await getDeviceName(serial);
-        String? abi = await getDeviceAbi(serial);
-        final identity = await getDeviceIdentity(serial);
+        // Read all stable device capabilities in one shell command. A failed
+        // metadata read does not hide an otherwise connected device or invent
+        // compatibility information; nullable fields remain unknown.
+        final properties = await _getDeviceProperties(
+          serial,
+          // Wi-Fi serials can remain stable while an endpoint is reassigned;
+          // refresh their identity with the same single getprop call.
+          refresh: transport == 'wifi',
+        );
+        final abis = _supportedAbis(properties);
+        final abi = abis.isEmpty
+            ? _value(properties, 'ro.product.cpu.abi')
+            : abis.first;
+        final manufacturer = _value(properties, 'ro.product.manufacturer');
+        final hardwareSerial = _value(properties, 'ro.serialno');
 
         devices.add(
           DeviceModel(
@@ -273,17 +325,98 @@ class AdbService {
             transport: transport,
             ip: ip,
             port: port,
-            name: name,
+            name: _deviceName(properties) ?? serial,
             abi: abi,
-            hardwareSerial: identity?.$2,
-            manufacturer: identity?.$1,
+            supportedAbis: abis,
+            apiLevel: _apiLevel(properties),
+            androidVersion: _value(properties, 'ro.build.version.release'),
+            cpuDescription: _value(properties, 'ro.hardware'),
+            hardwareSerial: hardwareSerial,
+            manufacturer: manufacturer,
           ),
         );
       }
+      _devicePropertiesCache.removeWhere(
+        (serial, _) => !connectedSerials.contains(serial),
+      );
       return devices;
     } catch (e) {
       return [];
     }
+  }
+
+  Future<Map<String, String>?> _getDeviceProperties(
+    String serial, {
+    bool refresh = false,
+  }) async {
+    final cached = _devicePropertiesCache[serial];
+    if (!refresh && cached != null) return cached;
+
+    Map<String, String>? properties;
+    try {
+      if (isMobile) {
+        if (_connectedIp == null) return null;
+        final output = await Adb.sendSingleCommand(
+          'getprop',
+          ip: _connectedIp!,
+          port: _connectedPort,
+        );
+        properties = parseDeviceProperties(output);
+      } else {
+        final result = await runAdbCommand(
+          ['-s', serial, 'shell', 'getprop'],
+          allowFailure: true,
+          timeout: const Duration(seconds: 5),
+          logOutput: false,
+        );
+        if (result.exitCode == 0) {
+          properties = parseDeviceProperties(result.stdout.toString());
+        }
+      }
+    } catch (_) {
+      // Keep the connected device visible with unknown capabilities.
+      return null;
+    }
+
+    if (properties == null || properties.isEmpty) return null;
+    _devicePropertiesCache[serial] = properties;
+    return properties;
+  }
+
+  String? _value(Map<String, String>? properties, String key) {
+    final value = properties?[key]?.trim();
+    return value == null || value.isEmpty || value == 'unknown' ? null : value;
+  }
+
+  String? _deviceName(Map<String, String>? properties) {
+    final manufacturer = _value(properties, 'ro.product.manufacturer');
+    final model = _value(properties, 'ro.product.model');
+    final name = [manufacturer, model].whereType<String>().join(' ').trim();
+    return name.isEmpty ? null : name;
+  }
+
+  int? _apiLevel(Map<String, String>? properties) =>
+      int.tryParse(_value(properties, 'ro.build.version.sdk') ?? '');
+
+  List<String> _supportedAbis(Map<String, String>? properties) {
+    final values = <String>[];
+    void add(String? value) {
+      if (value == null) return;
+      for (final abi in value.split(',')) {
+        final normalized = abi.trim();
+        if (normalized.isNotEmpty && !values.contains(normalized)) {
+          values.add(normalized);
+        }
+      }
+    }
+
+    add(_value(properties, 'ro.product.cpu.abilist'));
+    // Android 4.x/5.x devices may only expose abi and abi2.
+    if (values.isEmpty) {
+      add(_value(properties, 'ro.product.cpu.abi'));
+      add(_value(properties, 'ro.product.cpu.abi2'));
+    }
+    return values;
   }
 
   Future<String?> getDeviceAbi(String serial) async {
@@ -306,6 +439,36 @@ class AdbService {
       return result.stdout.toString().trim();
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Reads current RAM and /data usage plus the highest CPU hardware clock.
+  /// Individual values remain unknown when Android does not expose them.
+  Future<DeviceResources> getDeviceResources(String serial) async {
+    try {
+      String output;
+      if (isMobile) {
+        if (_connectedIp == null || serial != '$_connectedIp:$_connectedPort') {
+          return const DeviceResources();
+        }
+        output = await Adb.sendSingleCommand(
+          deviceResourcesProbeCommand,
+          ip: _connectedIp!,
+          port: _connectedPort,
+        ).timeout(const Duration(seconds: 8));
+      } else {
+        final result = await runAdbCommand(
+          ['-s', serial, 'shell', deviceResourcesProbeCommand],
+          allowFailure: true,
+          timeout: const Duration(seconds: 8),
+          logOutput: false,
+        );
+        output = result.stdout.toString();
+      }
+      return parseDeviceResources(output);
+    } catch (_) {
+      // Resource reporting must never make a connected device disappear.
+      return const DeviceResources();
     }
   }
 
@@ -1353,6 +1516,9 @@ class AdbService {
   Future<void> connectWifi(String ip, {String port = '5555'}) async {
     if (isMobile) {
       // For mobile 'connect', checking connectivity is basically trying a command
+      // Treat every explicit connect request as a new session, including a
+      // reconnect to the same endpoint.
+      _devicePropertiesCache.clear();
       _connectedIp = ip;
       _connectedPort = int.tryParse(port) ?? 5555;
       try {
@@ -1914,6 +2080,19 @@ String? parsePlatformToolsRevision(String sourceProperties) {
     if (match != null) return match.group(1);
   }
   return null;
+}
+
+/// Parses Android's standard `getprop` output without requiring one command
+/// per property. Unknown or malformed lines are ignored so this remains
+/// compatible with vendor-customized property output.
+Map<String, String> parseDeviceProperties(String output) {
+  final properties = <String, String>{};
+  final pattern = RegExp(r'^\[([^\]]+)\]:\s*\[([^\]]*)\]\s*$');
+  for (final line in const LineSplitter().convert(output)) {
+    final match = pattern.firstMatch(line.trim());
+    if (match != null) properties[match.group(1)!] = match.group(2)!;
+  }
+  return properties;
 }
 
 class AdbCommandException implements Exception {

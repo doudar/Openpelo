@@ -31,4 +31,39 @@ void main() {
     expect(usb.hashCode, sameUsb.hashCode);
     expect(usb, isNot(wifi));
   });
+
+  test('device equality includes capability metadata and list contents', () {
+    final first = DeviceModel(
+      serial: 'abc',
+      status: 'device',
+      transport: 'usb',
+      supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+      apiLevel: 24,
+      androidVersion: '7.0',
+      cpuDescription: 'ruby',
+    );
+    final same = DeviceModel(
+      serial: 'abc',
+      status: 'device',
+      transport: 'usb',
+      supportedAbis: ['arm64-v8a', 'armeabi-v7a'],
+      apiLevel: 24,
+      androidVersion: '7.0',
+      cpuDescription: 'ruby',
+    );
+    final changedAbi = DeviceModel(
+      serial: 'abc',
+      status: 'device',
+      transport: 'usb',
+      supportedAbis: ['armeabi-v7a'],
+      apiLevel: 24,
+      androidVersion: '7.0',
+      cpuDescription: 'ruby',
+    );
+
+    expect(first, same);
+    expect(first.hashCode, same.hashCode);
+    expect(first, isNot(changedAbi));
+    expect(first.supportedAbis, isA<List<String>>());
+  });
 }

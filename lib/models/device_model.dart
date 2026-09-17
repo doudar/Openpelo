@@ -8,6 +8,12 @@ class DeviceModel {
   final String? port;
   final String? name; // manufacturer + model
   final String? abi; // arm64-v8a or armeabi-v7a
+  /// The complete ABI list reported by Android. Universal APKs are therefore
+  /// represented without having to choose a single catalog architecture.
+  final List<String> supportedAbis;
+  final int? apiLevel;
+  final String? androidVersion;
+  final String? cpuDescription;
   final String? hardwareSerial;
   final String? manufacturer;
 
@@ -19,9 +25,13 @@ class DeviceModel {
     this.port,
     this.name,
     this.abi,
+    List<String> supportedAbis = const [],
+    this.apiLevel,
+    this.androidVersion,
+    this.cpuDescription,
     this.hardwareSerial,
     this.manufacturer,
-  });
+  }) : supportedAbis = List.unmodifiable(supportedAbis);
 
   String? get identityKey => manufacturer == null || hardwareSerial == null
       ? null
@@ -51,6 +61,10 @@ class DeviceModel {
             port == other.port &&
             name == other.name &&
             abi == other.abi &&
+            _stringListEquals(supportedAbis, other.supportedAbis) &&
+            apiLevel == other.apiLevel &&
+            androidVersion == other.androidVersion &&
+            cpuDescription == other.cpuDescription &&
             hardwareSerial == other.hardwareSerial &&
             manufacturer == other.manufacturer;
   }
@@ -64,7 +78,20 @@ class DeviceModel {
     port,
     name,
     abi,
+    Object.hashAll(supportedAbis),
+    apiLevel,
+    androidVersion,
+    cpuDescription,
     hardwareSerial,
     manufacturer,
   );
+}
+
+bool _stringListEquals(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

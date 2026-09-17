@@ -28,5 +28,13 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OpenPelo connects to your Peloton on your local network to install apps, transfer files, and view, control, and record its screen.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_adb._tcp</string>
+		<string>_adb-tls-pairing._tcp</string>
+		<string>_adb-tls-connect._tcp</string>
+	</array>
 </dict>
 </plist>
