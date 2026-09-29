@@ -7,6 +7,7 @@ const recommendedAppIds = <String>[
   'lawnchair',
   'aurora-store',
   'moonlight',
+  'google-tts',
 ];
 
 /// Returns one available app per recommended family in display order.

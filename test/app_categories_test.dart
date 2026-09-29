@@ -15,6 +15,8 @@ void main() {
   test('recommendations use fixed display order and deduplicate variants', () {
     final results = recommendedApps([
       app('Moonlight', 'moonlight'),
+      app('Google TTS Legacy', 'google-tts'),
+      app('Google TTS', 'google-tts', priority: 1),
       app('Old Lawnchair', 'lawnchair'),
       app('Unrelated', null),
       app('Aurora', 'aurora-store'),
@@ -31,15 +33,20 @@ void main() {
       'New Lawnchair',
       'Aurora',
       'Moonlight',
+      'Google TTS',
     ]);
   });
 
-  test('uses available legacy Lawnchair when modern variant is absent', () {
+  test('uses available legacy variants when modern variants are absent', () {
     final results = recommendedApps([
       app('Old Lawnchair', 'lawnchair'),
+      app('Google TTS Legacy', 'google-tts'),
       app('Unrelated', null),
     ]);
 
-    expect(results.map((app) => app.name), ['Old Lawnchair']);
+    expect(results.map((app) => app.name), [
+      'Old Lawnchair',
+      'Google TTS Legacy',
+    ]);
   });
 }

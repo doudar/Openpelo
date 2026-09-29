@@ -21,7 +21,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'bundled catalog has categories and the requested six recommended families',
+    'bundled catalog has categories and the requested recommended families',
     () async {
       final apps = await ConfigService().loadApps();
       final provider = BatchProvider();
@@ -35,6 +35,7 @@ void main() {
         'Lawnchair Launcher',
         'Aurora Store',
         'Moonlight Streaming',
+        'Google Text-to-Speech',
       ]);
       provider.setAppSelected('FDroid', true);
       provider.setAppSelected('Grupetto', true);

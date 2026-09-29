@@ -16,6 +16,25 @@
       "asset_pattern": "grupetto-*.apk",
       "description": "Sends bike data via BLE and provides a data metrics overlay"
     },
+    "Google Text-to-Speech": {
+      "category": "Accessibility",
+      "recommendation_id": "google-tts",
+      "recommendation_priority": 1,
+      "url": "https://gitlab.opengapps.org/opengapps/arm64/-/raw/84e304e0643be72daebb5ebfe80c5f4e8a8a6e6c/app/com.google.android.tts/23/nodpi/210361249.apk",
+      "asset_name": "google-tts-210361249-arm64.apk",
+      "package_id": "com.google.android.tts",
+      "sha256": "07e15042950527ad397652fe15dd6a10f857d22cfa8c199880c2ea873426ec77",
+      "description": "Google speech engine for spoken prompts in apps. Archived 2022 build.\nAfter installation, select Google in Android text-to-speech settings and download your preferred voice."
+    },
+    "Google Text-to-Speech Legacy": {
+      "category": "Accessibility",
+      "recommendation_id": "google-tts",
+      "url": "https://gitlab.opengapps.org/opengapps/arm/-/raw/ddc6cfe7f5b59519c1a1abb7b60530a237acfde0/app/com.google.android.tts/19/nodpi/210315355.apk",
+      "asset_name": "google-tts-210315355-arm.apk",
+      "package_id": "com.google.android.tts",
+      "sha256": "cb2972bc7aebab75acf558dd3268fceaf227609fb97df11fa1d746966fab1984",
+      "description": "Google speech engine v3.16.6 for older 32-bit devices, including Gen 1.\nAfter installation, select Google in Android text-to-speech settings and download your preferred voice."
+    },
     "Lawnchair Launcher": {
       "category": "Launchers",
       "recommendation_id": "lawnchair",

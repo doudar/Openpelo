@@ -135,12 +135,19 @@ refresh button, without rechecking the app catalog.
    the `.apk` file on your computer.
 
 **Recommended** opens by default and includes SmartSpin2k, Grupetto, Material
-Files, Lawnchair, Aurora Store, and Moonlight when compatible and available.
+Files, Lawnchair, Aurora Store, Moonlight, and Google Text-to-Speech when
+compatible and available.
 **Install all recommended** installs the apps shown in that category, without
-including other checked apps or changing your selections. Only one Lawnchair
-version is recommended: the current catalog build when compatible, otherwise
+including other checked apps or changing your selections. Only one version of
+each app is recommended: the preferred catalog build when compatible, otherwise
 the available legacy build. Other categories are Fitness, Launchers, App stores,
-Browsers, Files, and Media & streaming.
+Browsers, Files, Media & streaming, and Accessibility.
+
+Google Text-to-Speech uses Google-signed APKs from the Open GApps archive, pinned
+to a 2022 ARM64 build (Android 6.0+) and a legacy v3.16.6 ARM build (Android 4.4+).
+After installation, select Google in Android's text-to-speech settings and
+download your preferred voice. These archived builds are not the latest Google
+Play release.
 
 The bundled catalog includes fitness utilities such as SmartSpin2k and Grupetto,
 launchers such as Lawnchair, app stores, browsers, file managers, and media or
