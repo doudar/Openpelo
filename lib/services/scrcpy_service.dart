@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -7,8 +6,9 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 
 import 'adb_service.dart';
-import 'scrcpy_mpeg_ts.dart';
+import 'scrcpy_preview_buffer.dart';
 import 'scrcpy_protocol.dart';
+import 'scrcpy_relay_client.dart';
 
 /// A single, owned scrcpy v3.3.4 server session for a desktop ADB device.
 /// [packets] is broadcast: attach recorders after [start], and use
@@ -31,7 +31,8 @@ class ScrcpyService {
   _SocketReader? _videoReader;
   HttpServer? _relay;
   StreamSubscription<ScrcpyVideoPacket>? _relaySubscription;
-  final Set<_RelayClient> _relayClients = {};
+  final Set<ScrcpyRelayClient> _relayClients = {};
+  final ScrcpyPreviewBuffer _previewBuffer = ScrcpyPreviewBuffer();
   String? _remoteServer;
   int? _forwardPort;
   bool _closed = false;
@@ -296,9 +297,12 @@ class ScrcpyService {
         oldClient.close();
       }
       _relayClients.clear();
-      final client = _RelayClient(response);
+      final client = ScrcpyRelayClient(response);
       _relayClients.add(client);
       if (_codecConfig != null) client.addConfig(_codecConfig!);
+      for (final packet in _previewBuffer.packets) {
+        if (!client.addPacket(packet)) break;
+      }
       unawaited(
         response.done.then(
           (_) {
@@ -312,6 +316,7 @@ class ScrcpyService {
     });
     _relaySubscription = packets.listen(
       (packet) {
+        _previewBuffer.add(packet);
         for (final client in _relayClients.toList()) {
           if (!client.addPacket(packet)) _relayClients.remove(client);
         }
@@ -487,75 +492,4 @@ class _SocketReader {
   }
 
   void close() => unawaited(_iterator.cancel());
-}
-
-/// Each player has a small queue. A stalled decoder is disconnected instead
-/// of retaining an unlimited compressed video backlog in the application.
-class _RelayClient {
-  static const int maxQueuedBytes = 4 * 1024 * 1024;
-  final HttpResponse response;
-  final ScrcpyMpegTsMuxer _muxer = ScrcpyMpegTsMuxer();
-  final Queue<Uint8List> _queue = Queue<Uint8List>();
-  int _queuedBytes = 0;
-  bool _writing = false;
-  bool _closed = false;
-  bool _awaitKeyframe = true;
-
-  _RelayClient(this.response);
-
-  bool addConfig(Uint8List bytes) {
-    _awaitKeyframe = true;
-    _muxer.addConfig(bytes);
-    return true;
-  }
-
-  bool addPacket(ScrcpyVideoPacket packet) {
-    if (packet.isConfig) return addConfig(packet.bytes);
-    if (_awaitKeyframe) {
-      if (!packet.isKeyFrame) return true;
-      _awaitKeyframe = false;
-    }
-    try {
-      return _enqueue(_muxer.mux(packet));
-    } catch (_) {
-      close();
-      return false;
-    }
-  }
-
-  bool _enqueue(Uint8List bytes) {
-    if (_closed) return false;
-    if (_queuedBytes + bytes.length > maxQueuedBytes) {
-      close();
-      return false;
-    }
-    _queue.add(bytes);
-    _queuedBytes += bytes.length;
-    if (!_writing) unawaited(_drain());
-    return true;
-  }
-
-  Future<void> _drain() async {
-    _writing = true;
-    try {
-      while (!_closed && _queue.isNotEmpty) {
-        final bytes = _queue.removeFirst();
-        _queuedBytes -= bytes.length;
-        response.add(bytes);
-        await response.flush().timeout(const Duration(seconds: 2));
-      }
-    } catch (_) {
-      close();
-    } finally {
-      _writing = false;
-    }
-  }
-
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    _queue.clear();
-    _queuedBytes = 0;
-    unawaited(response.close());
-  }
 }

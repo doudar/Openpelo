@@ -1,5 +1,7 @@
 // Opt-in native texture/recording smoke app. Uses the same environment variables
 // as scrcpy_smoke_test.dart; writes <OPENPELO_SMOKE_OUTPUT>.json and exits.
+// For idle-screen checks, set OPENPELO_SMOKE_RECORD=false and optionally
+// OPENPELO_SMOKE_SECONDS and OPENPELO_SMOKE_MAX_SIZE (defaults: 5 and 1920).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -17,6 +19,9 @@ void main() async {
   await windowManager.setOpacity(0);
   final env = Platform.environment;
   final output = env['OPENPELO_SMOKE_OUTPUT']!;
+  final seconds = int.parse(env['OPENPELO_SMOKE_SECONDS'] ?? '5');
+  final record = env['OPENPELO_SMOKE_RECORD'] != 'false';
+  final maxSize = int.parse(env['OPENPELO_SMOKE_MAX_SIZE'] ?? '1920');
   final logs = <String>[];
   final controller = ScreenStreamController(
     decoderDiagnostics: true,
@@ -26,8 +31,8 @@ void main() async {
         onLog: (message, tag) => logs.add('$tag: $message'),
       ),
       serial: env['OPENPELO_SMOKE_SERIAL']!,
-      maxSize: 1920,
-      videoBitRate: 8000000,
+      maxSize: maxSize,
+      videoBitRate: maxSize <= 1280 ? 4000000 : 8000000,
     ),
     recordingPath: () async => output,
     onLog: (message, tag) => logs.add('$tag: $message'),
@@ -54,13 +59,16 @@ void main() async {
       result['ready'] = controller.ready;
       result['width'] = controller.videoSize.width;
       result['height'] = controller.videoSize.height;
-      await controller.startRecording();
-      await Future<void>.delayed(const Duration(seconds: 5));
+      if (record) await controller.startRecording();
+      await Future<void>.delayed(Duration(seconds: seconds));
+      result['readyAfterWait'] = controller.ready;
+      result['waitSeconds'] = seconds;
       result['frames'] = controller.recordedFrames;
       await controller.stopRecording();
       result['path'] = controller.lastRecordingPath;
       result['recordingMessage'] = controller.recordingMessage;
-      if (!controller.ready || controller.lastRecordingPath == null) {
+      if (!controller.ready ||
+          (record && controller.lastRecordingPath == null)) {
         throw StateError(controller.error ?? 'Recording not saved');
       }
     } catch (error, stack) {
