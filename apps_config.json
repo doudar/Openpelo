@@ -16,6 +16,15 @@
       "asset_pattern": "grupetto-*.apk",
       "description": "Sends bike data via BLE and provides a data metrics overlay"
     },
+    "OpenRide": {
+      "category": "Fitness",
+      "recommendation_id": "openride",
+      "url": "https://api.github.com/repos/digitalducktape/OpenRide/releases/latest",
+      "asset_name": "openride-real-4.apk",
+      "asset_pattern": "openride-real-*.apk",
+      "package_id": "dev.digitalducktape.openride.real",
+      "description": "Free, open source workout app for the Peloton Bike (Gen 2) and Bike+\nLive ride stats, free cycling classes, ride history, and FIT/TCX/CSV export - no subscription needed"
+    },
     "Google Text-to-Speech": {
       "category": "Accessibility",
       "recommendation_id": "google-tts",
