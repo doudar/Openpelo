@@ -25,6 +25,76 @@
       "package_id": "dev.digitalducktape.openride.real",
       "description": "Free, open source workout app for the Peloton Bike (Gen 2) and Bike+\nLive ride stats, free cycling classes, ride history, and FIT/TCX/CSV export - no subscription needed"
     },
+    "QZ Standard Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug.apk",
+      "asset_name": "android-debug.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for standard Android devices."
+    },
+    "QZ NordicTrack Treadmill Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-nordictrack-treadmill.apk",
+      "asset_name": "android-debug-nordictrack-treadmill.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for NordicTrack/iFIT treadmills using the gRPC integration."
+    },
+    "QZ NordicTrack Bike Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-nordictrack-bike.apk",
+      "asset_name": "android-debug-nordictrack-bike.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for NordicTrack/iFIT bikes using the gRPC integration."
+    },
+    "QZ NordicTrack Rower Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-nordictrack-rower.apk",
+      "asset_name": "android-debug-nordictrack-rower.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for NordicTrack/iFIT rowers using the gRPC integration."
+    },
+    "QZ FitPro Treadmill Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-fitpro-treadmill.apk",
+      "asset_name": "android-debug-fitpro-treadmill.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ FitPro nightly build for direct USB-HID NordicTrack/iFIT treadmill access."
+    },
+    "QZ FitPro Bike Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-fitpro-bike.apk",
+      "asset_name": "android-debug-fitpro-bike.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ FitPro nightly build for direct USB-HID NordicTrack/iFIT bike access."
+    },
+    "QZ FitPro Elliptical Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-fitpro-elliptical.apk",
+      "asset_name": "android-debug-fitpro-elliptical.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ FitPro nightly build for direct USB-HID NordicTrack/iFIT elliptical access."
+    },
+    "QZ FitPro Rower Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-fitpro-rower.apk",
+      "asset_name": "android-debug-fitpro-rower.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ FitPro nightly build for direct USB-HID NordicTrack/iFIT rower access."
+    },
+    "QZ Peloton Bike Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-peloton-bike.apk",
+      "asset_name": "android-debug-peloton-bike.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for Peloton Bike using the Grupetto integration."
+    },
+    "QZ Peloton Bike+ Nightly": {
+      "category": "Fitness",
+      "url": "https://github.com/cagnulein/qdomyos-zwift/releases/latest/download/android-debug-peloton-bike-plus.apk",
+      "asset_name": "android-debug-peloton-bike-plus.apk",
+      "package_id": "org.cagnulen.qdomyoszwift",
+      "description": "Latest QZ nightly build for Peloton Bike+ using the Grupetto integration."
+    },
     "Google Text-to-Speech": {
       "category": "Accessibility",
       "recommendation_id": "google-tts",
