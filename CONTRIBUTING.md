@@ -59,8 +59,7 @@ Applications are defined in `apps_config.json`:
       "asset_pattern": "example-*-arm64.apk",
       "package_id": "com.example.app",
       "sha256": "optional-lowercase-sha256",
-      "description": "Description shown in OpenPelo",
-      "abi": "arm64-v8a"
+      "description": "Description shown in OpenPelo"
     }
   }
 }
@@ -75,7 +74,25 @@ Applications are defined in `apps_config.json`:
   incompatible-signature reinstall.
 - `sha256` is an optional integrity checksum. Add it whenever the URL points
   to an immutable, versioned APK.
-- `abi` is `arm64-v8a` or `armeabi-v7a`.
+- Minimum Android API, native ABIs, package ID, and version are read from the
+  resolved APK. Static `abi` fields are not used. A successful probe establishes
+  metadata compatibility, not working playback or hardware compatibility.
+
+Audit sources without connecting a device or installing APKs:
+
+```powershell
+dart run tool/audit_catalog.dart
+```
+
+The command uses the production release asset selector and bounded APK probe,
+prints one JSON record per app, and exits nonzero if any source is unverified.
+An optional argument selects another catalog JSON file. GitHub metadata is
+cached within the run; on Windows it uses curl and the Windows certificate store.
+An unverified result is not necessarily a broken URL: inspect redirects and
+HTTP status to distinguish unavailable assets, access restrictions, timeouts,
+and servers without byte-range support. Do not bypass authentication or bot
+challenges. See the [2026-10-26 audit](docs/catalog-source-audit-2026-10-26.md)
+for the current source choices and limitations.
 
 ## Automated builds
 
