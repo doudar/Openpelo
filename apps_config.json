@@ -198,6 +198,22 @@
       "asset_name": "fennec-68.11.0.en-US.android-arm.apk",
       "description": "Firefox ESR 68.11 - Last version supporting Android 4.4+ and Gen 1"
     },
+    "Plex": {
+      "category": "Media & streaming",
+      "url": "https://downloads.plex.tv/Kepler/kepler-arm64-v8a-googlePlay-10.26.0.2578-6cc7ea1a.apk",
+      "asset_name": "kepler-arm64-v8a-googlePlay-10.26.0.2578-6cc7ea1a.apk",
+      "package_id": "com.plexapp.android",
+      "sha256": "f7271488dd931a720cf7965a36af25c5cd45c449d1dcea7edb16618e7a6ee010",
+      "description": "Archived Plex Android mobile client 10.26.0 (ARM64, Android 6+), before the redesigned mobile app.\nOfficial Plex download; Plex Pass required per the publisher. Personal media requires access to a Plex Media Server."
+    },
+    "Jellyfin": {
+      "category": "Media & streaming",
+      "url": "https://api.github.com/repos/jellyfin/jellyfin-android/releases/latest",
+      "asset_name": "jellyfin-android-v2.7.3-libre-release.apk",
+      "asset_pattern": "jellyfin-android-v*-libre-release.apk",
+      "package_id": "org.jellyfin.mobile",
+      "description": "Official Jellyfin Android mobile client (Libre build). Requires access to a Jellyfin server.\nUses Android System WebView; this is the phone/tablet client, not Jellyfin for Android TV."
+    },
     "Emby": {
       "category": "Media & streaming",
       "url": "https://github.com/MediaBrowser/Emby.Releases/raw/master/android/emby-android-google-arm64-v8a-release.apk",
@@ -232,8 +248,9 @@
     },
     "VLC Legacy": {
       "category": "Media & streaming",
-      "url": "https://get.videolan.org/vlc-android/3.2.12/VLC-Android-3.2.12-armeabi-v7a.apk",
+      "url": "https://download.videolan.org/pub/videolan/vlc-android/3.2.12/VLC-Android-3.2.12-armeabi-v7a.apk",
       "asset_name": "VLC-Android-3.2.12-armeabi-v7a.apk",
+      "sha256": "685ef95a9d0279d3231c4a8d9982cc47e06f1931683bece0c4711a4804bfb6dc",
       "description": "VLC media player v3.2.12 for Gen 1 - Plays almost any video/audio format"
     },
     "Simple File Manager": {
