@@ -214,6 +214,22 @@
       "package_id": "org.jellyfin.mobile",
       "description": "Official Jellyfin Android mobile client (Libre build). Requires access to a Jellyfin server.\nUses Android System WebView; this is the phone/tablet client, not Jellyfin for Android TV."
     },
+    "Stremio ARM64": {
+      "category": "Media & streaming",
+      "url": "https://dl.strem.io/android/v2.3.2-android/com.stremio.one-2.3.2-7145730-arm64-v8a.apk",
+      "asset_name": "com.stremio.one-2.3.2-7145730-arm64-v8a.apk",
+      "package_id": "com.stremio.one",
+      "sha256": "b5ad3fef7f47a37c30e578252368a8c16f886186bf4157f095dcd32358e6c91d",
+      "description": "Official Stremio Android Mobile 2.3.2 for touchscreens (ARM64, Android 7+).\nChoose one Stremio build; prefer ARM64 when available. Peloton playback is untested. OpenPelo does not configure or support third-party add-ons or streaming sources."
+    },
+    "Stremio ARM32": {
+      "category": "Media & streaming",
+      "url": "https://dl.strem.io/android/v2.3.2-android/com.stremio.one-2.3.2-5048578-armeabi-v7a.apk",
+      "asset_name": "com.stremio.one-2.3.2-5048578-armeabi-v7a.apk",
+      "package_id": "com.stremio.one",
+      "sha256": "fb79f0d1398c2422819173e85a1b6d6d68543e1fc9cf24a5ffd724bb63903235",
+      "description": "Official Stremio Android Mobile 2.3.2 for touchscreens (ARM32, Android 7+).\nChoose one Stremio build; prefer ARM64 when available. Peloton playback is untested. OpenPelo does not configure or support third-party add-ons or streaming sources."
+    },
     "Emby": {
       "category": "Media & streaming",
       "url": "https://github.com/MediaBrowser/Emby.Releases/raw/master/android/emby-android-google-arm64-v8a-release.apk",
