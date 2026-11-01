@@ -10,6 +10,7 @@ import '../widgets/peloton_uninstaller_dialog.dart';
 import '../widgets/recessed_pane.dart';
 import '../widgets/screen_mirror_dialog.dart';
 import '../widgets/device_capabilities_tile.dart';
+import '../widgets/coffee_link.dart';
 import '../theme/app_theme.dart';
 import 'wireless_connect_screen.dart';
 
@@ -42,6 +43,7 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          const CoffeeLink(),
           PopupMenuButton<String>(
             tooltip: 'Open tools menu',
             onSelected: (value) async {

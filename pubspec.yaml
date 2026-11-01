@@ -58,6 +58,7 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
+    - assets/branding/buy_me_a_coffee.png
     - apps_config.json
     - usb_debug_steps.json
     - wireless_adb_steps.json

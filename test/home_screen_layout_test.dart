@@ -81,6 +81,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(
+        find.byTooltip('Buy me a coffee (opens browser)').hitTestable(),
+        findsOneWidget,
+      );
       expect(find.textContaining('7.0'), findsWidgets);
       expect(find.textContaining('24'), findsWidgets);
       expect(find.textContaining('arm64-v8a'), findsWidgets);

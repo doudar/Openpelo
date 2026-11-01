@@ -189,6 +189,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Asset decoding runs outside the test clock; wait before capturing the logo.
+    await tester.runAsync(
+      () => precacheImage(
+        const AssetImage('assets/branding/buy_me_a_coffee.png'),
+        tester.element(find.byType(HomeScreen)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
     Future<void> capture(String name) async {
       expect(tester.takeException(), isNull);
       final boundary =
