@@ -298,6 +298,14 @@
       "url": "https://media.steampowered.com/steamlink/android/latest/steamlink-android.apk",
       "asset_name": "steamlink-android.apk",
       "description": "Stream Steam games from your PC to the Peloton over your local network\nRequires Steam on your PC\nAdd training programs to your library using 'add non steam game option'"
+    },
+    "Touch Guard (beta)": {
+      "category": "Accessibility",
+      "url": "https://github.com/murface/touch-guard/releases/download/v0.2.0-preview14/TouchGuard-0.2.0-preview14.apk",
+      "asset_name": "TouchGuard-0.2.0-preview14.apk",
+      "package_id": "com.touchguard.peloton",
+      "sha256": "3f39109c93680043651d9eadfc51d35e521ac4e6ee3d44dcb2962116e15e859e",
+      "description": "Sweat touch protection: Full Lock or Social Mode in one app. Hold Volume Down 5 seconds to toggle. Social Mode allows supported high-fives/replies, leaderboard scrolling and song controls; pause and other touches stay blocked. 2-hour default, up to 6 hours; no required 30-second test. One accessibility service: Use ON, Android shortcut OFF. No internet/uploads. Tested on one Original Bike / Android 11 / Peloton 2.8.3457; other versions unverified."
     }
   }
 }
