@@ -75,8 +75,9 @@ walkthrough. Menu locations depend on the device and its firmware.
    another device.
 
 Use **Scan for Devices** to find your device and fill in its connection details.
-Enter the pairing code shown on the device yourself. You only need the pairing
-code and pairing port the first time you pair a device.
+Enter the pairing code shown on the device yourself. If the scan finds nothing,
+enter the details manually. You only need the pairing code and pairing port
+the first time you pair a device.
 
 ### Set up WiFi through USB
 
@@ -225,14 +226,14 @@ or microphone audio in this first version.
 | **Save folder** | Use **Change Location** to choose the computer folder used for media, file downloads, and app-list exports. **Open Folder** opens it in your file browser. |
 | **Screenshot** | Save a PNG picture of the device display to the save folder. The filename includes the date and time. |
 | **View** | Open the live remote-screen viewer. It is configured for 1280 pixels at 30 fps by default; use Tutorial mode for 1920 pixels at 30 fps when the device and connection can sustain it. |
-| **Record MP4 / Stop** (inside View) | Save the live H.264 stream as a video-only MP4 file in the save folder. The filename includes the date and time. Keep the device connected until recording stops. |
+| **Record MP4 / Stop** (inside View) | Save the live H.264 stream as a video-only MP4 file in the save folder. Keep the device connected until recording stops. |
 | **Record** (on the home screen) | Use the original Android screen-recording method without opening the viewer. Stop this recording before opening the live viewer. |
 
 OpenPelo falls back to a screenshot-based preview when live viewing is not
 available, including unsupported platforms or devices that reject the server.
 
 For tutorials, open **View**, choose **Tutorial**, then **Record MP4**. The preset
-caps the longest edge at 1920 pixels and the frame rate at 30 fps; actual output
+caps the longest edge at 1920 pixels at 30 fps; actual output
 depends on the device. Click, drag, scroll, and type inside the viewer to control
 the Peloton, or use its Back, Home, and Recents buttons. Recordings contain the
 device screen, without OpenPelo's controls. Add narration in your video editor.
