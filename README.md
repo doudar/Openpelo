@@ -75,9 +75,8 @@ walkthrough. Menu locations depend on the device and its firmware.
    another device.
 
 Use **Scan for Devices** to find your device and fill in its connection details.
-Enter the pairing code shown on the device yourself. If the scan finds nothing,
-enter the details manually. You only need the pairing code and pairing port
-the first time you pair a device.
+Enter the pairing code shown on the device yourself. You only need the pairing
+code and pairing port the first time you pair a device.
 
 ### Set up WiFi through USB
 
@@ -226,7 +225,7 @@ or microphone audio in this first version.
 | **Save folder** | Use **Change Location** to choose the computer folder used for media, file downloads, and app-list exports. **Open Folder** opens it in your file browser. |
 | **Screenshot** | Save a PNG picture of the device display to the save folder. The filename includes the date and time. |
 | **View** | Open the live remote-screen viewer. It is configured for 1280 pixels at 30 fps by default; use Tutorial mode for 1920 pixels at 30 fps when the device and connection can sustain it. |
-| **Record MP4 / Stop** (inside View) | Save the live H.264 stream as a video-only MP4 file in the save folder. Keep the device connected until recording stops. |
+| **Record MP4 / Stop** (inside View) | Save the live H.264 stream as a video-only MP4 file in the save folder. The filename includes the date and time. Keep the device connected until recording stops. |
 | **Record** (on the home screen) | Use the original Android screen-recording method without opening the viewer. Stop this recording before opening the live viewer. |
 
 OpenPelo falls back to a screenshot-based preview when live viewing is not
@@ -276,6 +275,7 @@ Open **Tools** in the upper-right corner for these additional controls:
 | Wi-Fi connection fails on macOS | Allow OpenPelo under **System Settings → Privacy & Security → Local Network**, then retry. The permission covers device discovery, Wi-Fi ADB, and remote viewing. |
 | A remembered WiFi device stops reconnecting | Make sure it's on the same network as your computer, then try **Connect via WiFi** or **Pair using USB** again. |
 | An APK will not install | Check **ADB Messages** for the reason. Make sure the app supports your device and Android version. If you see **Signature Mismatch**, read the reinstall prompt before continuing. |
+| Wallpaper says “Disabled by your admin” | See the [wallpaper troubleshooting guide](./docs/wallpaper-troubleshooting.md) for an opt-in ADB helper, manual commands, and device-policy limitations. This is experimental and does not change installation defaults. |
 | A file or setting cannot be accessed | Some system folders and settings are protected by Android. Check **ADB Messages** for details. |
 | Capture controls are missing from view | Scroll the home page to **Downloads & Media**, or enlarge the window. |
 
