@@ -233,7 +233,7 @@ OpenPelo falls back to a screenshot-based preview when live viewing is not
 available, including unsupported platforms or devices that reject the server.
 
 For tutorials, open **View**, choose **Tutorial**, then **Record MP4**. The preset
-caps the longest edge at 1920 pixels at 30 fps; actual output
+caps the longest edge at 1920 pixels and the frame rate at 30 fps; actual output
 depends on the device. Click, drag, scroll, and type inside the viewer to control
 the Peloton, or use its Back, Home, and Recents buttons. Recordings contain the
 device screen, without OpenPelo's controls. Add narration in your video editor.
