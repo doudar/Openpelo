@@ -15,6 +15,23 @@ String parentRemotePath(String path) {
   return _posix.dirname(normalized);
 }
 
+/// Maps [localPath], which lives inside the local folder [localRoot], to the
+/// matching device path under [remoteRoot], so a folder upload keeps its
+/// layout. [context] defaults to the host platform's path rules.
+String remotePathForLocalEntry(
+  String localRoot,
+  String localPath,
+  String remoteRoot, {
+  p.Context? context,
+}) {
+  final local = context ?? p.context;
+  final segments = local.split(local.relative(localPath, from: localRoot));
+  if (segments.any((s) => s == '..' || local.isAbsolute(s))) {
+    throw FormatException('$localPath is not inside $localRoot');
+  }
+  return joinRemotePath(remoteRoot, _posix.joinAll(segments));
+}
+
 /// Builds a local destination for a remote entry without allowing the remote
 /// name to introduce host path separators or escape [root].
 String safeLocalEntryPath(String root, String name) {

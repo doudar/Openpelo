@@ -242,4 +242,52 @@ drwxrwx--x root     sdcard_rw          2016-05-01 12:00 DCIM
       expect(formatFileSize(150 * 1024 * 1024), '150 MB');
     });
   });
+
+  group('remotePathForLocalEntry', () {
+    test('keeps nested layout under the remote root', () {
+      final posix = p.Context(style: p.Style.posix);
+      expect(
+        remotePathForLocalEntry(
+          '/home/me/Music',
+          '/home/me/Music/Album One/disc 1/track.mp3',
+          '/sdcard/Music',
+          context: posix,
+        ),
+        '/sdcard/Music/Album One/disc 1/track.mp3',
+      );
+      expect(
+        remotePathForLocalEntry(
+          '/home/me/Music',
+          '/home/me/Music',
+          '/sdcard/Music',
+          context: posix,
+        ),
+        '/sdcard/Music',
+      );
+    });
+
+    test('converts Windows separators', () {
+      expect(
+        remotePathForLocalEntry(
+          r'C:\Users\me\Music',
+          r'C:\Users\me\Music\Album\track.mp3',
+          '/sdcard/Music',
+          context: p.Context(style: p.Style.windows),
+        ),
+        '/sdcard/Music/Album/track.mp3',
+      );
+    });
+
+    test('rejects paths outside the local root', () {
+      expect(
+        () => remotePathForLocalEntry(
+          '/home/me/Music',
+          '/home/me/other.txt',
+          '/sdcard/Music',
+          context: p.Context(style: p.Style.posix),
+        ),
+        throwsFormatException,
+      );
+    });
+  });
 }

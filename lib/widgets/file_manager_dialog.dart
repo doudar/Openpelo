@@ -173,6 +173,53 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
     await _refresh();
   }
 
+  Future<void> _uploadFolder() async {
+    setState(() {
+      _transferring = true;
+      _transferLabel = "Waiting for folder selection...";
+      _transferProgress = null;
+      _lastDownloadPath = null;
+      _lastDownloadDir = null;
+    });
+    final result = await _provider.uploadFolderToDevice(
+      widget.deviceSerial,
+      _currentPath,
+      onProgress: (done, total, name) {
+        if (!mounted) return;
+        setState(() {
+          _transferLabel = "Uploading ${done + 1} of $total: $name";
+          _transferProgress = done / total;
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _transferring = false;
+      _transferLabel = null;
+    });
+    if (result == null) return;
+    final failed = result.total - result.uploaded;
+    if (!result.ok) {
+      _setStatus(
+        "Could not upload folder ${result.name}. See the log for details.",
+        isError: true,
+      );
+    } else if (failed > 0) {
+      _setStatus(
+        "Uploaded ${result.uploaded} of ${result.total} files from "
+        "${result.name}. See the log for details.",
+        isError: true,
+      );
+    } else {
+      _setStatus(
+        "Uploaded folder ${result.name} "
+        "(${result.total} file${result.total == 1 ? '' : 's'}) "
+        "to $_currentPath",
+      );
+    }
+    await _refresh();
+  }
+
   /// Downloads [entry] to the save location, or to a folder the user picks when
   /// [chooseDestination] is set or "Ask each time" is on.
   Future<void> _download(
@@ -344,10 +391,31 @@ class _FileManagerDialogState extends State<FileManagerDialog> {
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
       ),
       actions: [
-        IconButton(
-          tooltip: "Upload files here",
-          onPressed: _busy ? null : _upload,
+        PopupMenuButton<VoidCallback>(
+          tooltip: "Upload here",
+          enabled: !_busy,
           icon: const Icon(Icons.upload_file),
+          onSelected: (action) => action(),
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: _upload,
+              child: const ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.upload_file),
+                title: Text("Upload files"),
+              ),
+            ),
+            PopupMenuItem(
+              value: _uploadFolder,
+              child: const ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.drive_folder_upload_outlined),
+                title: Text("Upload folder"),
+              ),
+            ),
+          ],
         ),
         IconButton(
           tooltip: "New folder",
