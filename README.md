@@ -202,8 +202,10 @@ shortcuts to **sdcard**, **Download**, **DCIM**, and **Movies**.
    **Device path** and press Enter.
 2. Click the **Name**, **Size**, or **Modified** column header to sort. Click
    the same header again to reverse the order.
-3. Use **Upload files here** to select local files and send them to the current
-   device folder. Use **New folder** to create a folder there.
+3. Use **Upload here** to send local content to the current device folder:
+   **Upload files** sends selected files, and **Upload folder** sends a whole
+   folder, recreating its nested subfolders on the device. Existing device
+   files are never overwritten. Use **New folder** to create a folder there.
 4. Use a row's **Download** action to copy a file or folder to your computer.
    **More actions → Download to...** selects a destination for just that
    download. **Rename** and **Delete** operate on the device; deletion requires
