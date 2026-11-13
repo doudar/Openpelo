@@ -13,6 +13,7 @@ import '../models/device_model.dart';
 import '../models/device_resources.dart';
 import '../models/device_file_model.dart';
 import '../models/installed_app_model.dart';
+import 'android_package_name.dart';
 import 'device_file_parser.dart';
 import 'device_resources_parser.dart';
 
@@ -581,10 +582,13 @@ class AdbService {
   }
 
   Future<String> uninstallPackage(String serial, String packageName) async {
+    if (!_checkPackageName(packageName, 'uninstall')) {
+      return "Error: Invalid package name";
+    }
     if (isMobile) {
       if (_connectedIp == null) return "Error: Not connected";
       final out = await Adb.sendSingleCommand(
-        'pm uninstall $packageName',
+        'pm uninstall ${quoteShellArg(packageName)}',
         ip: _connectedIp!,
         port: _connectedPort,
       );
@@ -606,10 +610,13 @@ class AdbService {
     String serial,
     String packageName,
   ) async {
+    if (!_checkPackageName(packageName, 'uninstall')) {
+      return "Error: Invalid package name";
+    }
     if (isMobile) {
       if (_connectedIp == null) return "Error: Not connected";
       final out = await Adb.sendSingleCommand(
-        'pm uninstall --user 0 $packageName',
+        'pm uninstall --user 0 ${quoteShellArg(packageName)}',
         ip: _connectedIp!,
         port: _connectedPort,
       );
@@ -624,7 +631,7 @@ class AdbService {
       'uninstall',
       '--user',
       '0',
-      packageName,
+      quoteShellArg(packageName),
     ], allowFailure: true);
     return result.stdout.toString() + result.stderr.toString();
   }
@@ -774,7 +781,7 @@ class AdbService {
           'put',
           'secure',
           'sysui_qs_tiles',
-          newTiles,
+          quoteShellArg(newTiles),
         ]);
         onLog("Added wireless_debugging to quick settings tiles.", 'info');
       }
@@ -1068,11 +1075,22 @@ class AdbService {
     return '${result.stdout}${result.stderr}';
   }
 
+  /// Rejects anything that is not a plain Android application ID so it never
+  /// reaches the device shell, where `adb shell` joins arguments into one
+  /// command line that `sh` parses.
+  bool _checkPackageName(String packageName, String action) {
+    if (isValidAndroidPackageName(packageName)) return true;
+    onLog("Cannot $action: invalid package name '$packageName'", 'error');
+    return false;
+  }
+
   Future<bool> launchPackage(String serial, String packageName) async {
+    if (!_checkPackageName(packageName, 'launch')) return false;
     try {
       final output = await _runShellCommandText(
         serial,
-        'monkey -p $packageName -c android.intent.category.LAUNCHER 1',
+        'monkey -p ${quoteShellArg(packageName)} '
+        '-c android.intent.category.LAUNCHER 1',
       );
       final ok =
           !output.toLowerCase().contains('no activities found') &&
@@ -1089,8 +1107,12 @@ class AdbService {
   }
 
   Future<bool> forceStopPackage(String serial, String packageName) async {
+    if (!_checkPackageName(packageName, 'force stop')) return false;
     try {
-      await _runShellCommandText(serial, 'am force-stop $packageName');
+      await _runShellCommandText(
+        serial,
+        'am force-stop ${quoteShellArg(packageName)}',
+      );
       onLog("Force stopped $packageName", 'info');
       return true;
     } catch (e) {
@@ -1100,10 +1122,11 @@ class AdbService {
   }
 
   Future<bool> clearPackageData(String serial, String packageName) async {
+    if (!_checkPackageName(packageName, 'clear data')) return false;
     try {
       final output = await _runShellCommandText(
         serial,
-        'pm clear $packageName',
+        'pm clear ${quoteShellArg(packageName)}',
       );
       final ok =
           output.toLowerCase().contains('success') || output.trim().isEmpty;
@@ -1376,7 +1399,7 @@ class AdbService {
         'cmd',
         'package',
         'set-home-activity',
-        component,
+        quoteShellArg(component),
       ]);
       if (result.exitCode == 0) {
         onLog("Default launcher set to $component", 'info');
@@ -1427,6 +1450,7 @@ class AdbService {
   /// Open the app info / settings page for a specific package on the device.
   Future<bool> openAppSettings(String serial, String packageName) async {
     if (isMobile) return false;
+    if (!_checkPackageName(packageName, 'open app settings')) return false;
     try {
       await runAdbCommand([
         '-s',
@@ -1437,7 +1461,7 @@ class AdbService {
         '-a',
         'android.settings.APPLICATION_DETAILS_SETTINGS',
         '-d',
-        'package:$packageName',
+        quoteShellArg('package:$packageName'),
       ]);
       onLog("Opened app settings for $packageName on device", 'info');
       return true;
@@ -1456,7 +1480,7 @@ class AdbService {
         'shell',
         'dumpsys',
         'package',
-        pkg,
+        quoteShellArg(pkg),
       ]);
       final output = result.stdout.toString();
       final match = RegExp(

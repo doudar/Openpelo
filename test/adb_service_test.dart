@@ -106,6 +106,103 @@ Pkg.Revision = 37.0.1
       expect(properties, {'ro.product.model': 'Ruby'});
     });
   });
+
+  group('package names reach the device shell quoted', () {
+    test('launch, force stop and clear data quote the package name', () async {
+      final adb = CapturingAdb();
+
+      await adb.launchPackage('usb1', 'com.example.app');
+      await adb.forceStopPackage('usb1', 'com.example.app');
+      await adb.clearPackageData('usb1', 'com.example.app');
+
+      expect(adb.commands, [
+        [
+          '-s',
+          'usb1',
+          'shell',
+          "monkey -p 'com.example.app' -c android.intent.category.LAUNCHER 1",
+        ],
+        ['-s', 'usb1', 'shell', "am force-stop 'com.example.app'"],
+        ['-s', 'usb1', 'shell', "pm clear 'com.example.app'"],
+      ]);
+    });
+
+    test(
+      'uninstall for user 0 and app settings quote the package name',
+      () async {
+        final adb = CapturingAdb();
+
+        await adb.uninstallPackageUser0('usb1', 'com.example.app');
+        await adb.openAppSettings('usb1', 'com.example.app');
+
+        expect(adb.commands[0].last, "'com.example.app'");
+        expect(adb.commands[1].last, "'package:com.example.app'");
+      },
+    );
+
+    test('launcher components and quick settings tiles are quoted', () async {
+      final adb = CapturingAdb();
+
+      await adb.setDefaultLauncher('usb1', r'com.example.launcher/.Main$Home');
+      expect(adb.commands.single.last, r"'com.example.launcher/.Main$Home'");
+
+      adb.commands.clear();
+      adb.stdout = 'wifi,bt';
+      await adb.enableWirelessDebugging('usb1');
+      expect(adb.commands[1].last, "'wifi,bt,wireless_debugging'");
+    });
+
+    test(
+      'invalid package names are rejected before any command runs',
+      () async {
+        final adb = CapturingAdb();
+        const hostile = 'com.example.app; rm -rf /sdcard';
+
+        expect(await adb.launchPackage('usb1', hostile), isFalse);
+        expect(await adb.forceStopPackage('usb1', hostile), isFalse);
+        expect(await adb.clearPackageData('usb1', hostile), isFalse);
+        expect(await adb.openAppSettings('usb1', hostile), isFalse);
+        expect(
+          await adb.uninstallPackage('usb1', hostile),
+          startsWith('Error'),
+        );
+        expect(
+          await adb.uninstallPackageUser0('usb1', hostile),
+          startsWith('Error'),
+        );
+
+        expect(adb.commands, isEmpty);
+        expect(adb.errors, hasLength(6));
+        expect(adb.errors.first, contains('invalid package name'));
+      },
+    );
+  });
+}
+
+class CapturingAdb extends AdbService {
+  final List<List<String>> commands = [];
+  final List<String> errors = [];
+  String stdout = '';
+
+  CapturingAdb() : super(onLog: (_, _) {}) {
+    onLog = (message, type) {
+      if (type == 'error') errors.add(message);
+    };
+  }
+
+  @override
+  bool get isMobile => false;
+
+  @override
+  Future<ProcessResult> runAdbCommand(
+    List<String> args, {
+    bool allowFailure = false,
+    Duration? timeout,
+    bool logOutput = true,
+  }) async {
+    commands.add(args);
+    return ProcessResult(1, 0, stdout, '');
+  }
 }
 
 class CapabilityAdb extends AdbService {
