@@ -276,6 +276,7 @@ Open **Tools** in the upper-right corner for these additional controls:
 | Wi-Fi connection fails on macOS | Allow OpenPelo under **System Settings → Privacy & Security → Local Network**, then retry. The permission covers device discovery, Wi-Fi ADB, and remote viewing. |
 | A remembered WiFi device stops reconnecting | Make sure it's on the same network as your computer, then try **Connect via WiFi** or **Pair using USB** again. |
 | An APK will not install | Check **ADB Messages** for the reason. Make sure the app supports your device and Android version. If you see **Signature Mismatch**, read the reinstall prompt before continuing. |
+| Wallpaper says “Disabled by your admin” | See the [wallpaper troubleshooting guide](./docs/wallpaper-troubleshooting.md) for an opt-in ADB helper, manual commands, and device-policy limitations. This is experimental and does not change installation defaults. |
 | A file or setting cannot be accessed | Some system folders and settings are protected by Android. Check **ADB Messages** for details. |
 | Capture controls are missing from view | Scroll the home page to **Downloads & Media**, or enlarge the window. |
 
