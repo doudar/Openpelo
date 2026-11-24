@@ -543,24 +543,46 @@ class AdbService {
       ['-r'],
     ];
 
-    ProcessResult? lastResult;
-    for (final flags in installAttempts) {
+    var nonStreaming = false;
+    var attempt = 0;
+    while (true) {
+      final flags = installAttempts[attempt];
       final result = await runAdbCommand([
         '-s',
         serial,
         'install',
+        if (nonStreaming) '--no-streaming',
         ...flags,
         apkPath,
       ], allowFailure: true);
-      lastResult = result;
-      final output = result.stdout.toString() + result.stderr.toString();
+      final output = [result.stdout, result.stderr]
+          .map((stream) => stream.toString().trimRight())
+          .where((stream) => stream.isNotEmpty)
+          .join('\n');
+
+      if (nonStreaming) {
+        onLog(
+          'Non-streamed install finished with exit code ${result.exitCode}.',
+          result.exitCode == 0 ? 'info' : 'error',
+        );
+      } else if (result.exitCode != 0 &&
+          _isUnexplainedStreamedInstallFailure(output, apkPath)) {
+        onLog(
+          'Streamed install failed without an error reason. Retrying with --no-streaming.',
+          'info',
+        );
+        nonStreaming = true;
+        continue;
+      }
 
       if (output.contains('Success')) {
         return output;
       }
 
       final unsupportedOption = _unsupportedInstallOption(output);
-      if (unsupportedOption == null || !flags.contains(unsupportedOption)) {
+      if (unsupportedOption == null ||
+          !flags.contains(unsupportedOption) ||
+          attempt + 1 == installAttempts.length) {
         return output;
       }
 
@@ -568,11 +590,19 @@ class AdbService {
         "Device package manager does not support install option $unsupportedOption; retrying with older-device flags.",
         'info',
       );
+      attempt++;
     }
+  }
 
-    return lastResult == null
-        ? "Error: Install did not run"
-        : lastResult.stdout.toString() + lastResult.stderr.toString();
+  bool _isUnexplainedStreamedInstallFailure(String output, String apkPath) {
+    final lines = const LineSplitter()
+        .convert(output)
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    return lines.length == 2 &&
+        lines.contains('Performing Streamed Install') &&
+        lines.contains('adb: failed to install $apkPath:');
   }
 
   String? _unsupportedInstallOption(String output) {
