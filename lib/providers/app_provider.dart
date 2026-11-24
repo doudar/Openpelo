@@ -1779,6 +1779,104 @@ class AppProvider with ChangeNotifier {
     return success;
   }
 
+  /// Lets the user pick a local folder and recreates it, including nested
+  /// subfolders, inside [remoteDir]. Existing device folders are merged into;
+  /// existing device files are never overwritten. Returns null if the picker
+  /// was cancelled.
+  Future<FolderUploadResult?> uploadFolderToDevice(
+    String deviceSerial,
+    String remoteDir, {
+    void Function(int done, int total, String name)? onProgress,
+  }) async {
+    final picked = await FilePicker.getDirectoryPath(
+      dialogTitle: 'Select a folder to upload',
+    );
+    if (picked == null) return null;
+
+    final localRoot = p.normalize(p.absolute(picked));
+    final name = p.basename(localRoot);
+    if (name.isEmpty || p.rootPrefix(localRoot) == localRoot) {
+      _onLog(
+        "Cannot upload $picked: pick a folder, not a drive root.",
+        'error',
+      );
+      return FolderUploadResult(name: picked, uploaded: 0, total: 0, ok: false);
+    }
+    final remoteRoot = joinRemotePath(remoteDir, name);
+
+    _setBusy(true);
+    try {
+      final directories = <String>[];
+      final files = <String>[];
+      try {
+        await for (final entity in Directory(localRoot).list(recursive: true)) {
+          if (entity is Directory) {
+            directories.add(entity.path);
+          } else if (entity is File) {
+            files.add(entity.path);
+          } else {
+            _onLog("Skipped unreadable link ${entity.path}", 'error');
+          }
+        }
+      } catch (e) {
+        _onLog("Could not read $localRoot: $e", 'error');
+        return FolderUploadResult(name: name, uploaded: 0, total: 0, ok: false);
+      }
+      directories.sort();
+      files.sort();
+
+      // Create every folder up front so empty ones are kept too.
+      if (!await _adbService.makeDirectory(deviceSerial, remoteRoot)) {
+        _onLog("Failed to create folder $remoteRoot", 'error');
+        return FolderUploadResult(
+          name: name,
+          uploaded: 0,
+          total: files.length,
+          ok: false,
+        );
+      }
+      for (final directory in directories) {
+        final remote = remotePathForLocalEntry(
+          localRoot,
+          directory,
+          remoteRoot,
+        );
+        if (!await _adbService.makeDirectory(deviceSerial, remote)) {
+          _onLog("Failed to create folder $remote", 'error');
+        }
+      }
+
+      var success = 0;
+      for (var i = 0; i < files.length; i++) {
+        final relative = p.relative(files[i], from: localRoot);
+        onProgress?.call(i, files.length, relative);
+        try {
+          final remoteParent = remotePathForLocalEntry(
+            localRoot,
+            p.dirname(files[i]),
+            remoteRoot,
+          );
+          await _adbService.pushFile(deviceSerial, files[i], remoteParent);
+          success++;
+        } catch (e) {
+          _onLog("Failed to upload $relative: $e", 'error');
+        }
+      }
+      _onLog(
+        "Uploaded $success of ${files.length} files from $name to $remoteRoot",
+        success == files.length ? 'info' : 'error',
+      );
+      return FolderUploadResult(
+        name: name,
+        uploaded: success,
+        total: files.length,
+        ok: true,
+      );
+    } finally {
+      _setBusy(false);
+    }
+  }
+
   /// Pulls [entry] into [destination], or the save location when omitted.
   /// Returns the local path on success.
   Future<String?> downloadDeviceEntry(
@@ -1886,4 +1984,24 @@ class AppProvider with ChangeNotifier {
     _catalogService.probeService.close();
     super.dispose();
   }
+}
+
+/// Outcome of [AppProvider.uploadFolderToDevice].
+class FolderUploadResult {
+  const FolderUploadResult({
+    required this.name,
+    required this.uploaded,
+    required this.total,
+    required this.ok,
+  });
+
+  /// Name of the uploaded folder.
+  final String name;
+
+  /// Files pushed successfully, out of [total] found in the folder.
+  final int uploaded;
+  final int total;
+
+  /// False when the folder could not be read or created on the device.
+  final bool ok;
 }
