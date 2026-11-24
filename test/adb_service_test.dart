@@ -3,6 +3,75 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openpelo/services/adb_service.dart';
 
 void main() {
+  group('desktop APK install', () {
+    const apk = '/cache/Moonlight release.apk';
+    const banner = 'Performing Streamed Install\r\n';
+    const failure = 'adb: failed to install $apk:';
+    const flags = ['-r', '-d', '-g', '-t'];
+    final blankFailure = ProcessResult(1, 1, banner, '$failure \r\n');
+
+    test('retries a blank streamed failure and logs the outcome', () async {
+      final adb = InstallAdb([
+        blankFailure,
+        ProcessResult(1, 0, 'Success', ''),
+      ]);
+      expect(await adb.installApk('usb123', apk), 'Success');
+      expect(adb.commands, [
+        ['-s', 'usb123', 'install', ...flags, apk],
+        ['-s', 'usb123', 'install', '--no-streaming', ...flags, apk],
+      ]);
+      expect(adb.logs, [
+        contains('Retrying with --no-streaming'),
+        contains('exit code 0'),
+      ]);
+    });
+
+    test('returns the fallback error and stops retrying', () async {
+      const reason = 'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]';
+      final adb = InstallAdb([blankFailure, ProcessResult(1, 1, '', reason)]);
+      expect(await adb.installApk('usb123', apk), reason);
+      expect(adb.commands, hasLength(2));
+      expect(
+        adb.logs.last,
+        contains('error: Non-streamed install finished with exit code 1'),
+      );
+    });
+
+    test(
+      'preserves explicit errors, including reasons on the next line',
+      () async {
+        for (final reason in [
+          '$failure Failure [INSTALL_FAILED_OLDER_SDK]',
+          '$failure\r\nerror: device offline',
+        ]) {
+          final adb = InstallAdb([ProcessResult(1, 1, banner, reason)]);
+          expect(await adb.installApk('usb123', apk), endsWith(reason));
+          expect(adb.commands, hasLength(1));
+          expect(adb.logs, isEmpty);
+        }
+      },
+    );
+
+    test('keeps non-streamed mode when retrying older-device flags', () async {
+      final adb = InstallAdb([
+        blankFailure,
+        ProcessResult(1, 1, '', 'Unknown option: -d'),
+        ProcessResult(1, 0, 'Success', ''),
+      ]);
+      expect(await adb.installApk('usb123', apk), 'Success');
+      expect(adb.commands.last, [
+        '-s',
+        'usb123',
+        'install',
+        '--no-streaming',
+        '-r',
+        '-g',
+        '-t',
+        apk,
+      ]);
+    });
+  });
+
   test(
     'abilist overrides stale legacy ABI properties and USB metadata is cached',
     () async {
@@ -106,6 +175,30 @@ Pkg.Revision = 37.0.1
       expect(properties, {'ro.product.model': 'Ruby'});
     });
   });
+}
+
+class InstallAdb extends AdbService {
+  final List<ProcessResult> results;
+  final commands = <List<String>>[];
+  final logs = <String>[];
+
+  InstallAdb(this.results) : super(onLog: (_, _) {}) {
+    onLog = (message, tag) => logs.add('$tag: $message');
+  }
+
+  @override
+  bool get isMobile => false;
+
+  @override
+  Future<ProcessResult> runAdbCommand(
+    List<String> args, {
+    bool allowFailure = false,
+    Duration? timeout,
+    bool logOutput = true,
+  }) async {
+    commands.add(args);
+    return results.removeAt(0);
+  }
 }
 
 class CapabilityAdb extends AdbService {

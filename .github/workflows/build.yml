@@ -309,6 +309,7 @@ jobs:
         with:
           tag_name: v${{ needs.bump-version.outputs.new_version }}
           name: Release v${{ needs.bump-version.outputs.new_version }}
+          generate_release_notes: true
           draft: false
           prerelease: false
           files: |
